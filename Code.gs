@@ -1,61 +1,76 @@
-// Paste this into the Homelab spreadsheet's Apps Script project (Extensions > Apps Script),
-// as a NEW file or appended to the existing Code.gs that already has the Type-filter onEdit sync.
-// Deploy as a Web App (Execute as: Me, Who has access: Anyone) to get a JSON endpoint the PWA reads.
-// Read-only — does not modify the sheet.
+// Paste this into the Homelab spreadsheet's Apps Script project (Extensions > Apps Script), replacing
+// the earlier version of this file (keep the separate onEdit sync script untouched, if present).
+// Deploy as a Web App (Execute as: Me, Who has access: Anyone). Read-only — never writes to the sheet.
+// Serves raw per-row data from the Data tab so the dashboard can filter/aggregate/chart client-side,
+// instead of mirroring pre-computed cells.
 
 function doGet(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var out = {
     generatedAt: new Date().toISOString(),
-    glance: getGlance_(ss),
-    typePerformance: getTypePerformance_(ss),
-    charts: getCharts_(ss)
+    raw: getRawData_(ss)
   };
   return ContentService.createTextOutput(JSON.stringify(out))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-function getGlance_(ss) {
-  var sh = ss.getSheetByName('Dashboard');
-  if (!sh) return null;
-  var finder = sh.createTextFinder('AT A GLANCE').matchEntireCell(false).findNext();
-  if (!finder) return null;
-  var titleRow = finder.getRow();
-  var title = sh.getRange(titleRow, 1).getDisplayValue();
-  var startRow = titleRow + 2; // skip the "Metric | Period A" header row
+// Field order returned per row. Index 0 is always the ISO date (from the "Date (Gregorian)" helper
+// column) — everything else is looked up by header name so this survives future column inserts.
+var RAW_FIELDS_ = [
+  'date', 'source', 'medium', 'channelType', 'campaign', 'landingPage', 'copy',
+  'cost', 'impressions', 'clicks', 'sessions', 'leads', 'inzone', 'mql', 'orders', 'sms', 'upsell',
+  'leadPremium', 'leadPrescription', 'leadFree',
+  'inzonePremium', 'inzonePrescription', 'inzoneFree',
+  'mqlPremium', 'mqlPrescription', 'mqlFree',
+  'orderPremium', 'orderPrescription', 'orderFree',
+  'costPremium', 'costPrescription', 'costFree',
+  'upsellPremium', 'upsellPrescription', 'upsellFree'
+];
+
+var RAW_HEADER_NAMES_ = {
+  source: 'Source', medium: 'Medium', channelType: 'Channel Type', campaign: 'Campaign',
+  landingPage: 'Landing Page', copy: 'Copy',
+  cost: 'Cost (IRR)', impressions: 'Impressions', clicks: 'Clicks', sessions: 'Sessions',
+  leads: 'Leads', inzone: 'Inzone', mql: 'MQL', orders: 'Orders', sms: 'SMS Sent', upsell: 'Upsell',
+  leadPremium: 'Lead Premium', leadPrescription: 'Lead Prescription', leadFree: 'Lead Free',
+  inzonePremium: 'Inzone Premium', inzonePrescription: 'Inzone Prescription', inzoneFree: 'Inzone Free',
+  mqlPremium: 'MQL Premium', mqlPrescription: 'MQL Prescription', mqlFree: 'MQL Free',
+  orderPremium: 'Order Premium', orderPrescription: 'Order Prescription', orderFree: 'Order Free',
+  costPremium: 'Cost Premium', costPrescription: 'Cost Prescription', costFree: 'Cost Free',
+  upsellPremium: 'Upsell Premium', upsellPrescription: 'Upsell Prescription', upsellFree: 'Upsell Free'
+};
+
+function getRawData_(ss) {
+  var sh = ss.getSheetByName('Data');
+  if (!sh) return { fields: RAW_FIELDS_, rows: [] };
+
+  var lastCol = sh.getLastColumn();
+  var hdr = sh.getRange(3, 1, 1, lastCol).getValues()[0];
+  var idx = {};
+  hdr.forEach(function (h, i) { if (h) idx[h] = i; });
+
+  var dateIdx = idx['Date (Gregorian)'];
+  var colIdx = {};
+  for (var key in RAW_HEADER_NAMES_) colIdx[key] = idx[RAW_HEADER_NAMES_[key]];
+
+  var lastRow = sh.getLastRow();
+  var numRows = lastRow - 3;
+  if (numRows <= 0 || dateIdx === undefined) return { fields: RAW_FIELDS_, rows: [] };
+
+  var data = sh.getRange(4, 1, numRows, lastCol).getValues();
+  var tz = Session.getScriptTimeZone();
   var rows = [];
-  for (var r = startRow; r < startRow + 30; r++) {
-    var metric = sh.getRange(r, 1).getDisplayValue();
-    if (!metric) break;
-    var value = sh.getRange(r, 2).getDisplayValue();
-    rows.push({ metric: metric, value: value });
-  }
-  return { title: title, rows: rows };
-}
 
-function getTypePerformance_(ss) {
-  var sh = ss.getSheetByName('Type Performance');
-  if (!sh) return null;
-  var values = sh.getDataRange().getDisplayValues();
-  return { values: values };
-}
-
-function getCharts_(ss) {
-  var sh = ss.getSheetByName('Dashboard');
-  if (!sh) return [];
-  var charts = sh.getCharts();
-  var out = [];
-  for (var i = 0; i < charts.length; i++) {
-    try {
-      var chart = charts[i];
-      var blob = chart.getAs('image/png');
-      var b64 = Utilities.base64Encode(blob.getBytes());
-      var title = '';
-      try { title = chart.getOptions().get('title') || ''; } catch (e1) {}
-      out.push({ title: title, image: 'data:image/png;base64,' + b64 });
-    } catch (e2) {
-      // skip any chart that fails to export
+  for (var r = 0; r < data.length; r++) {
+    var d = data[r][dateIdx];
+    if (!(d instanceof Date)) continue;
+    var rec = [Utilities.formatDate(d, tz, 'yyyy-MM-dd')];
+    for (var f = 1; f < RAW_FIELDS_.length; f++) {
+      var v = data[r][colIdx[RAW_FIELDS_[f]]];
+      rec.push(typeof v === 'number' ? v : (v || 0));
     }
+    rows.push(rec);
   }
-  return out;
+
+  return { fields: RAW_FIELDS_, rows: rows };
 }
