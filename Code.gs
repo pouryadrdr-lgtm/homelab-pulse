@@ -9,10 +9,22 @@ function doGet(e) {
   var out = {
     generatedAt: new Date().toISOString(),
     raw: getRawData_(ss),
-    targets: getTargets_(ss)
+    targets: getTargets_(ss),
+    channelTypes: getChannelTypes_(ss)
   };
   return ContentService.createTextOutput(JSON.stringify(out))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// "Free" was renamed from "No-insurance" — campaign rows still tagged with the old text should still
+// match, same alias map the sheet's own costF formula uses (build_line.js / patch_cost_campaign_match.js).
+var CAMPAIGN_ALIASES_ = { 'Free': ['Free', 'No-insurance'] };
+
+function getChannelTypes_(ss){
+  var sh = ss.getSheetByName('Settings');
+  if (!sh) return [];
+  var vals = sh.getRange(3, 5, 30, 1).getValues(); // Settings!E3:E32 — the Channel Type list
+  return vals.map(function(r){ return r[0]; }).filter(function(v){ return v; });
 }
 
 // ---------- Data tab (per-row campaign entries) ----------
@@ -61,13 +73,27 @@ function getRawData_(ss) {
   var data = sh.getRange(4, 1, numRows, lastCol).getValues();
   var tz = Session.getScriptTimeZone();
   var rows = [];
+  var costTypeIdx = { Premium: colIdx.costPremium, Prescription: colIdx.costPrescription, Free: colIdx.costFree };
 
   for (var r = 0; r < data.length; r++) {
     var d = data[r][dateIdx];
     if (!(d instanceof Date)) continue;
+    var totalCost = data[r][colIdx.cost];
+    totalCost = typeof totalCost === 'number' ? totalCost : 0;
+    var campaign = String(data[r][colIdx.campaign] || '');
     var rec = [Utilities.formatDate(d, tz, 'yyyy-MM-dd')];
     for (var f = 1; f < RAW_FIELDS_.length; f++) {
-      var v = data[r][colIdx[RAW_FIELDS_[f]]];
+      var name = RAW_FIELDS_[f];
+      if (name === 'costPremium' || name === 'costPrescription' || name === 'costFree') {
+        var type = name === 'costPremium' ? 'Premium' : (name === 'costPrescription' ? 'Prescription' : 'Free');
+        var entry = data[r][costTypeIdx[type]];
+        if (typeof entry === 'number') { rec.push(entry); continue; }
+        var aliases = CAMPAIGN_ALIASES_[type] || [type];
+        var matches = aliases.some(function (a) { return campaign.toLowerCase() === a.toLowerCase(); });
+        rec.push(matches ? totalCost : 0);
+        continue;
+      }
+      var v = data[r][colIdx[name]];
       rec.push(typeof v === 'number' ? v : (v || 0));
     }
     rows.push(rec);
@@ -85,6 +111,7 @@ var TARGET_FIELDS_ = [
   'inzonePremium', 'inzonePrescription', 'inzoneFree',
   'mqlPremium', 'mqlPrescription', 'mqlFree',
   'orderPremium', 'orderPrescription', 'orderFree',
+  'costPremium', 'costPrescription', 'costFree',
   'upsellPremium', 'upsellPrescription', 'upsellFree'
 ];
 
@@ -95,6 +122,7 @@ var TARGET_HEADER_NAMES_ = {
   inzonePremium: 'Target Inzone Premium', inzonePrescription: 'Target Inzone Prescription', inzoneFree: 'Target Inzone Free',
   mqlPremium: 'Target MQL Premium', mqlPrescription: 'Target MQL Prescription', mqlFree: 'Target MQL Free',
   orderPremium: 'Target Order Premium', orderPrescription: 'Target Order Prescription', orderFree: 'Target Order Free',
+  costPremium: 'Target Cost Premium', costPrescription: 'Target Cost Prescription', costFree: 'Target Cost Free',
   upsellPremium: 'Target Upsell Premium', upsellPrescription: 'Target Upsell Prescription', upsellFree: 'Target Upsell Free'
 };
 
