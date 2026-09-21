@@ -53,6 +53,12 @@
   #filters .sep{width:1px;align-self:stretch;background:var(--border);margin:0 2px}
   #range-label{color:var(--text-dim);font-size:12px;margin-left:auto;white-space:nowrap}
 
+  #tab-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:0}
+  .tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text-dim);font-weight:700;font-size:13px;padding:9px 4px;cursor:pointer;margin-right:18px;font-family:var(--font-body)}
+  .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .summary-line{background:var(--accent-soft);border-radius:10px;padding:10px 14px;font-size:12.5px;color:var(--text);margin-bottom:14px;line-height:1.5}
+  .summary-line b{font-weight:700}
+
   .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(156px,1fr));gap:10px}
   .tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 14px 11px;display:flex;flex-direction:column;gap:4px;justify-content:flex-start}
   .tile .label{font-size:11.5px;color:var(--text-dim);font-weight:600}
@@ -160,44 +166,96 @@
     <span id="range-label"></span>
   </div>
 
-  <section id="tiles-section">
-    <h2>At a glance</h2>
-    <div class="tiles" id="tiles"></div>
-  </section>
+  <div id="tab-bar">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="landing">Landing Pages</button>
+    <button class="tab-btn" data-tab="copies">Copies</button>
+    <button class="tab-btn" data-tab="brief">Brief</button>
+  </div>
 
-  <section id="trend-section">
-    <div class="panel">
-      <div class="panel-head">
-        <h3>Trend</h3>
-        <select id="trend-metric-select"></select>
-      </div>
-      <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
-    </div>
-  </section>
+  <div id="tab-overview" class="tab-panel">
+    <section id="tiles-section">
+      <h2>At a glance</h2>
+      <div class="tiles" id="tiles"></div>
+    </section>
 
-  <section id="breakdown-section">
-    <div class="panel">
-      <div class="panel-head">
-        <h3>Breakdown &middot; best CPL first</h3>
-        <select id="breakdown-dim-select">
-          <option value="channelType">Channel Type</option>
-          <option value="sourceMedium">Source / Medium</option>
-          <option value="campaign">Campaign</option>
-          <option value="landingPage">Landing Page</option>
-          <option value="copy">Copy</option>
-        </select>
+    <section id="trend-section">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Trend</h3>
+          <select id="trend-metric-select"></select>
+        </div>
+        <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
       </div>
-      <div class="grid-2">
-        <div class="chart-wrap"><canvas id="breakdown-chart"></canvas></div>
-        <div class="table-wrap">
-          <table id="breakdown-table">
-            <thead><tr><th>#</th><th>Group</th><th class="num">Leads</th><th class="num">MQL</th><th class="num">Orders</th><th class="num">Cost</th><th class="num">CPL</th><th class="num">CPO</th></tr></thead>
-            <tbody></tbody>
-          </table>
+    </section>
+
+    <section id="breakdown-section">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Breakdown &middot; best CPL first</h3>
+          <select id="breakdown-dim-select">
+            <option value="channelType">Channel Type</option>
+            <option value="sourceMedium">Source / Medium</option>
+            <option value="campaign">Campaign</option>
+            <option value="landingPage">Landing Page</option>
+            <option value="copy">Copy</option>
+          </select>
+        </div>
+        <div class="grid-2">
+          <div class="chart-wrap"><canvas id="breakdown-chart"></canvas></div>
+          <div class="table-wrap">
+            <table id="breakdown-table">
+              <thead><tr><th>#</th><th>Group</th><th class="num">Leads</th><th class="num">MQL</th><th class="num">Orders</th><th class="num">Cost</th><th class="num">CPL</th><th class="num">CPO</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
+  </div>
+
+  <div id="tab-landing" class="tab-panel" hidden>
+    <section>
+      <div class="panel">
+        <div class="panel-head"><h3>Landing Pages Performance</h3></div>
+        <div id="lp-summary" class="summary-line"></div>
+        <div class="grid-2">
+          <div class="chart-wrap"><canvas id="lp-chart"></canvas></div>
+          <div class="table-wrap">
+            <table id="lp-table">
+              <thead><tr><th>#</th><th>Landing Page</th><th class="num">Sessions</th><th class="num">Leads</th><th class="num">Sess&rarr;Lead</th><th class="num">MQL</th><th class="num">Orders</th><th class="num">Cost</th><th class="num">CPL</th><th class="num">CPO</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="tab-copies" class="tab-panel" hidden>
+    <section>
+      <div class="panel">
+        <div class="panel-head"><h3>Copies Performance</h3></div>
+        <div id="cp-summary" class="summary-line"></div>
+        <div class="grid-2">
+          <div class="chart-wrap"><canvas id="cp-chart"></canvas></div>
+          <div class="table-wrap">
+            <table id="cp-table">
+              <thead><tr><th>#</th><th>Campaign &mdash; Copy</th><th class="num">Leads</th><th class="num">MQL</th><th class="num">MQL&rarr;Order</th><th class="num">Orders</th><th class="num">Cost</th><th class="num">CPL</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="tab-brief" class="tab-panel" hidden>
+    <section>
+      <h2>Brief</h2>
+      <div class="tiles" id="brief-tiles"></div>
+    </section>
+  </div>
 </main>
 
 <footer>Refreshes automatically every 5 minutes &middot; last pulled <span id="footer-time" class="tabular">&mdash;</span></footer>
@@ -282,13 +340,15 @@
   var TARGETS = null;      // { fields, rows } from the Targets tab
   var TARGET_IDX = {};     // field name -> column index in each target row
   var TARGETS_BY_KEY = {}; // "year|MonthName" -> target row
+  var CHANNEL_TYPES = [];  // full canonical list from Settings (not just what's present in loaded rows)
   var anchorISO = null;    // latest date present in the data ("today" for this dataset)
   var dateFilter = 'last7'; // yesterday | last7 | last30 | mtd | qtd
   var channelTypeFilter = '';
   var typeFilter = '';     // '' | Premium | Prescription | Free
   var trendMetric = 'leads';
   var breakdownDim = 'channelType';
-  var charts = { trend: null, breakdown: null };
+  var activeTab = 'overview';
+  var charts = { trend: null, breakdown: null, lp: null, cp: null };
 
   var TYPED_METRICS = ['leads','inzone','mql','orders','cost','upsell'];
   var METRIC_LABELS = { cost:'Cost (IRR)', impressions:'Impressions', clicks:'Clicks', sessions:'Sessions',
@@ -298,7 +358,8 @@
   var els = {};
   ['status-dot','status-text','settings-panel','endpoint-input','empty-state','error-state','error-detail',
    'content','tiles','date-chips','channel-type-select','type-select','range-label',
-   'trend-metric-select','breakdown-dim-select','footer-time'].forEach(function(id){
+   'trend-metric-select','breakdown-dim-select','footer-time',
+   'lp-summary','cp-summary','brief-tiles'].forEach(function(id){
     els[id.replace(/-([a-z])/g,function(_,c){return c.toUpperCase();})] = document.getElementById(id);
   });
 
@@ -336,8 +397,8 @@
   }
 
   // ---------- Target lookup (Targets tab: one row per Jalali Year+Month) ----------
-  var TARGET_TYPE_PREFIX = { leads:'lead', inzone:'inzone', mql:'mql', orders:'order', upsell:'upsell' };
-  var BLENDED_ONLY_METRICS = { cost:1, impressions:1, clicks:1, sessions:1, sms:1 }; // no per-type target columns exist
+  var TARGET_TYPE_PREFIX = { leads:'lead', inzone:'inzone', mql:'mql', orders:'order', upsell:'upsell', cost:'cost' };
+  var BLENDED_ONLY_METRICS = { impressions:1, clicks:1, sessions:1, sms:1 }; // no per-type target columns exist
 
   function tfield(row, name){ return row[TARGET_IDX[name]] || 0; }
 
@@ -465,11 +526,14 @@
   }
 
   function renderFilterOptions(){
-    var types = {};
-    RAW.rows.forEach(function(row){ var v = field(row,'channelType'); if (v) types[v] = true; });
     var current = els.channelTypeSelect.value;
+    var list = CHANNEL_TYPES.length ? CHANNEL_TYPES.slice() : (function(){
+      var types = {};
+      RAW.rows.forEach(function(row){ var v = field(row,'channelType'); if (v) types[v] = true; });
+      return Object.keys(types).sort();
+    })();
     els.channelTypeSelect.innerHTML = '<option value="">Channel Type: All</option>';
-    Object.keys(types).sort().forEach(function(t){
+    list.forEach(function(t){
       var o = document.createElement('option'); o.value = t; o.textContent = t;
       els.channelTypeSelect.appendChild(o);
     });
@@ -592,12 +656,16 @@
     return v || '(not set)';
   }
 
-  function renderBreakdown(rows){
+  // Generic group aggregator: keyFn returns null to exclude a row from grouping entirely.
+  function computeGroupStats(rows, keyFn, opts){
+    opts = opts || {};
     var groups = {};
     rows.forEach(function(row){
-      var key = groupKey(row, breakdownDim);
-      if (!groups[key]) groups[key] = { leads:0, mql:0, orders:0, cost:0 };
+      var key = keyFn(row);
+      if (key === null) return;
+      if (!groups[key]) groups[key] = { sessions:0, leads:0, mql:0, orders:0, cost:0 };
       var g = groups[key];
+      if (opts.sessions) g.sessions += field(row,'sessions')||0;
       g.leads += metricValue(row,'leads');
       g.mql += metricValue(row,'mql');
       g.orders += metricValue(row,'orders');
@@ -605,7 +673,11 @@
     });
     var list = Object.keys(groups).map(function(k){
       var g = groups[k];
-      g.name = k; g.cpl = g.leads ? g.cost/g.leads : 0; g.cpo = g.orders ? g.cost/g.orders : 0;
+      g.name = k;
+      g.cpl = g.leads ? g.cost/g.leads : 0;
+      g.cpo = g.orders ? g.cost/g.orders : 0;
+      g.sessLead = g.sessions ? g.leads/g.sessions : 0;
+      g.mqlOrder = g.mql ? g.orders/g.mql : 0;
       return g;
     });
     list.sort(function(a,b){
@@ -614,7 +686,27 @@
       if (!b.leads) return -1;
       return a.cpl - b.cpl;
     });
+    return list;
+  }
 
+  function drawBarChart(canvasId, labels, values, chartKey){
+    var ctx = document.getElementById(canvasId);
+    var textColor = getComputedStyle(document.body).getPropertyValue('--text-dim').trim();
+    var gridColor = getComputedStyle(document.body).getPropertyValue('--border').trim();
+    var accent = getComputedStyle(document.body).getPropertyValue('--accent').trim();
+    if (charts[chartKey]) charts[chartKey].destroy();
+    charts[chartKey] = new Chart(ctx, {
+      type: 'bar',
+      data: { labels: labels, datasets: [{ data: values, backgroundColor: accent }] },
+      options: { indexAxis: 'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false} },
+        scales:{ x:{ ticks:{ color:textColor }, grid:{ color:gridColor }, beginAtZero:true },
+                 y:{ ticks:{ color:textColor, autoSkip:false }, grid:{ display:false } } } }
+    });
+  }
+
+  function renderBreakdown(rows){
+    var list = computeGroupStats(rows, function(row){ return groupKey(row, breakdownDim); });
     var tbody = document.querySelector('#breakdown-table tbody');
     tbody.innerHTML = '';
     list.forEach(function(g, i){
@@ -628,19 +720,136 @@
     });
 
     var top = list.filter(function(g){return g.leads>0;}).slice(0,12);
-    var ctx = document.getElementById('breakdown-chart');
-    var textColor = getComputedStyle(document.body).getPropertyValue('--text-dim').trim();
-    var gridColor = getComputedStyle(document.body).getPropertyValue('--border').trim();
-    var accent = getComputedStyle(document.body).getPropertyValue('--accent').trim();
-    if (charts.breakdown) charts.breakdown.destroy();
-    charts.breakdown = new Chart(ctx, {
-      type: 'bar',
-      data: { labels: top.map(function(g){return g.name;}), datasets: [{ data: top.map(function(g){return g.cpl;}), backgroundColor: accent }] },
-      options: { indexAxis: 'y', responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{display:false} },
-        scales:{ x:{ ticks:{ color:textColor }, grid:{ color:gridColor }, beginAtZero:true },
-                 y:{ ticks:{ color:textColor, autoSkip:false }, grid:{ display:false } } } }
+    drawBarChart('breakdown-chart', top.map(function(g){return g.name;}), top.map(function(g){return g.cpl;}), 'breakdown');
+  }
+
+  function fmtPct(n){ return isFinite(n) ? Math.round(n*1000)/10 + '%' : '—'; }
+
+  function renderLandingPagesTab(rows){
+    var list = computeGroupStats(rows, function(row){ return field(row,'landingPage') || '(not set)'; }, { sessions: true });
+    var tbody = document.querySelector('#lp-table tbody');
+    tbody.innerHTML = '';
+    list.forEach(function(g, i){
+      var tr = document.createElement('tr');
+      if (!g.leads) tr.className = 'zero';
+      tr.innerHTML = '<td class="rank">'+(i+1)+'</td><td>'+escapeHtml(g.name)+'</td>'+
+        '<td class="num">'+fmtNum(g.sessions)+'</td><td class="num">'+fmtNum(g.leads)+'</td>'+
+        '<td class="num">'+fmtPct(g.sessLead)+'</td><td class="num">'+fmtNum(g.mql)+'</td>'+
+        '<td class="num">'+fmtNum(g.orders)+'</td><td class="num">'+fmtNum(g.cost)+'</td>'+
+        '<td class="num">'+fmtRatio(g.cpl)+'</td><td class="num">'+fmtRatio(g.cpo)+'</td>';
+      tbody.appendChild(tr);
     });
+    var withData = list.filter(function(g){return g.leads>0;});
+    var best = withData[0], worst = withData[withData.length-1];
+    els.lpSummary.innerHTML = best
+      ? '<b>Best:</b> '+escapeHtml(best.name)+' &mdash; CPL '+fmtNum(best.cpl)+', Sess&rarr;Lead '+fmtPct(best.sessLead)+
+        (worst && worst!==best ? '&nbsp;&nbsp;&middot;&nbsp;&nbsp;<b>Weakest:</b> '+escapeHtml(worst.name)+' &mdash; CPL '+fmtNum(worst.cpl) : '')
+      : 'Not enough data in this range.';
+    var top = withData.slice(0,12);
+    drawBarChart('lp-chart', top.map(function(g){return g.name;}), top.map(function(g){return g.cpl;}), 'lp');
+  }
+
+  function renderCopiesTab(rows){
+    var list = computeGroupStats(rows, function(row){
+      var copy = field(row,'copy');
+      if (!copy) return null; // sheet's own Copy breakdown only looks at rows where Copy is filled
+      var camp = field(row,'campaign') || '(not set)';
+      return camp + ' — ' + copy;
+    });
+    var tbody = document.querySelector('#cp-table tbody');
+    tbody.innerHTML = '';
+    list.forEach(function(g, i){
+      var tr = document.createElement('tr');
+      if (!g.leads) tr.className = 'zero';
+      tr.innerHTML = '<td class="rank">'+(i+1)+'</td><td>'+escapeHtml(g.name)+'</td>'+
+        '<td class="num">'+fmtNum(g.leads)+'</td><td class="num">'+fmtNum(g.mql)+'</td>'+
+        '<td class="num">'+fmtPct(g.mqlOrder)+'</td><td class="num">'+fmtNum(g.orders)+'</td>'+
+        '<td class="num">'+fmtNum(g.cost)+'</td><td class="num">'+fmtRatio(g.cpl)+'</td>';
+      tbody.appendChild(tr);
+    });
+    var withData = list.filter(function(g){return g.leads>0;});
+    var best = withData[0], worst = withData[withData.length-1];
+    els.cpSummary.innerHTML = best
+      ? '<b>Best:</b> '+escapeHtml(best.name)+' &mdash; CPL '+fmtNum(best.cpl)+', MQL&rarr;Order '+fmtPct(best.mqlOrder)+
+        (worst && worst!==best ? '&nbsp;&nbsp;&middot;&nbsp;&nbsp;<b>Weakest:</b> '+escapeHtml(worst.name)+' &mdash; CPL '+fmtNum(worst.cpl) : '')
+      : 'No copy-tagged rows in this range.';
+    var top = withData.slice(0,12);
+    drawBarChart('cp-chart', top.map(function(g){return g.name;}), top.map(function(g){return g.cpl;}), 'cp');
+  }
+
+  // Direct MQL: campaign name equals the type being counted (Total Lead view sums Direct across all
+  // 3 types). Indirect = Total - Direct. Same convention as the sheet's Type Performance tab, adapted
+  // from Lead to MQL. No campaign-alias handling here (unlike Cost) — matches the sheet's own formula.
+  function computeDirectIndirectMQL(rows){
+    var types = typeFilter ? [typeFilter] : ['Premium','Prescription','Free'];
+    var direct = 0;
+    rows.forEach(function(row){
+      var camp = (field(row,'campaign')||'').toLowerCase();
+      types.forEach(function(t){
+        if (camp === t.toLowerCase()) direct += field(row, TYPE_FIELD_MAP.mql[t]) || 0;
+      });
+    });
+    var total = 0;
+    rows.forEach(function(row){ total += metricValue(row,'mql'); });
+    return { direct: direct, indirect: total - direct, total: total };
+  }
+
+  function renderBriefTab(rows){
+    var mqlSplit = computeDirectIndirectMQL(rows);
+    var t = computeTotals(rows);
+    var cpmql = mqlSplit.total ? t.cost / mqlSplit.total : 0;
+
+    var tiles = [
+      { key:'directMql', label:'Direct MQL', value: mqlSplit.direct, targetKey:'mql' },
+      { key:'indirectMql', label:'Indirect MQL', value: mqlSplit.indirect, targetKey:null },
+      { key:'totalMql', label:'Total MQL', value: mqlSplit.total, targetKey:null },
+      { key:'orders', label:'Orders', value: t.orders, targetKey:'orders' },
+      { key:'cost', label:'Cost (IRR)', value: t.cost, targetKey:'cost' },
+      { key:'cpmql', label:'CPMQL', value: cpmql, targetKey:'cpmql', actualOverride: cpmql }
+    ];
+
+    els.briefTiles.innerHTML = '';
+    tiles.forEach(function(spec){
+      var tile = document.createElement('div');
+      tile.className = 'tile';
+      var isRatio = spec.key === 'cpmql';
+      var html = '<div class="label">'+spec.label+'</div>'+
+        '<div class="value tabular">'+(isRatio ? fmtRatio(spec.value) : fmtNum(spec.value))+'</div>';
+      if (spec.targetKey){
+        var info = periodTargetInfo(spec.targetKey);
+        if (info && info.target > 0){
+          var attain = spec.value / info.target;
+          var variance = attain - 1;
+          html += '<div class="target-line">Target '+fmtNum(info.target)+'</div>';
+          html += '<div class="stat-chips">' + statChip('Attain', attain, LOWER_BETTER[spec.targetKey]);
+          if (isOpenPeriod[dateFilter] && info.paceDenom){
+            html += statChip('Pace', spec.value/info.paceDenom, LOWER_BETTER[spec.targetKey]);
+          }
+          html += '<span class="stat-chip neutral">Var '+(variance>=0?'+':'')+Math.round(variance*100)+'%</span></div>';
+        } else {
+          html += '<div class="target-line">No target set</div>';
+        }
+      } else {
+        html += '<div class="target-line">No target for this row</div>';
+      }
+      tile.innerHTML = html;
+      els.briefTiles.appendChild(tile);
+    });
+  }
+
+  function switchTab(tab){
+    activeTab = tab;
+    document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.tab === tab); });
+    ['overview','landing','copies','brief'].forEach(function(t){ document.getElementById('tab-'+t).hidden = (t !== tab); });
+    renderActiveTab();
+  }
+
+  function renderActiveTab(){
+    var rows = filteredRows();
+    if (activeTab === 'overview'){ renderTiles(rows); renderTrend(rows); renderBreakdown(rows); }
+    else if (activeTab === 'landing'){ renderLandingPagesTab(rows); }
+    else if (activeTab === 'copies'){ renderCopiesTab(rows); }
+    else if (activeTab === 'brief'){ renderBriefTab(rows); }
   }
 
   function escapeHtml(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -654,10 +863,7 @@
   function renderAll(){
     renderDateChips();
     renderRangeLabel();
-    var rows = filteredRows();
-    renderTiles(rows);
-    renderTrend(rows);
-    renderBreakdown(rows);
+    renderActiveTab();
   }
 
   // ---------- Load ----------
@@ -685,6 +891,8 @@
       var key = row[TARGET_IDX.year] + '|' + row[TARGET_IDX.month];
       TARGETS_BY_KEY[key] = row;
     });
+
+    CHANNEL_TYPES = payload.channelTypes || [];
 
     renderFilterOptions();
     renderAll();
@@ -729,6 +937,7 @@
   els.typeSelect.addEventListener('change', function(){ typeFilter = els.typeSelect.value; renderAll(); });
   els.trendMetricSelect.addEventListener('change', function(){ trendMetric = els.trendMetricSelect.value; renderTrend(filteredRows()); });
   els.breakdownDimSelect.addEventListener('change', function(){ breakdownDim = els.breakdownDimSelect.value; renderBreakdown(filteredRows()); });
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.addEventListener('click', function(){ switchTab(b.dataset.tab); }); });
 
   function openSettings(){ els.endpointInput.value = getEndpoint(); els.settingsPanel.hidden = false; els.endpointInput.focus(); }
 
