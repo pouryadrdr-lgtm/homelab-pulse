@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Homelab Pulse</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <style>
   html{color-scheme:light dark}
-  body{margin:0}
   :root{
     --bg:#f4f5f3; --surface:#ffffff; --surface-2:#eceeeb; --border:#dcdfda;
     --text:#171b18; --text-dim:#5b625c; --accent:#2f7d78; --accent-soft:#e3efee;
@@ -16,27 +16,22 @@
     --font-mono:'IBM Plex Mono',ui-monospace,'SF Mono',monospace;
   }
   @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
+    :root{
       --bg:#121614; --surface:#191e1b; --surface-2:#212722; --border:#2b322c;
       --text:#eef1ee; --text-dim:#9aa39c; --accent:#5fb3ac; --accent-soft:#1c2c2a;
       --good:#5fbf85; --warn:#d9a441; --bad:#e0685d;
     }
   }
-  :root[data-theme="dark"]{
-    --bg:#121614; --surface:#191e1b; --surface-2:#212722; --border:#2b322c;
-    --text:#eef1ee; --text-dim:#9aa39c; --accent:#5fb3ac; --accent-soft:#1c2c2a;
-    --good:#5fbf85; --warn:#d9a441; --bad:#e0685d;
-  }
   *{box-sizing:border-box}
-  body{background:var(--bg);color:var(--text);font-family:var(--font-body);padding-inline:16px;padding-block:20px 40px;max-width:960px;margin:0 auto}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-body);padding-inline:16px;padding-block:20px 48px;max-width:1080px;margin-inline:auto}
   h1,h2,h3{font-family:var(--font-body);text-wrap:balance;margin:0}
   .tabular{font-variant-numeric:tabular-nums}
-  header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:22px}
+  header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
   .brand{display:flex;flex-direction:column;gap:2px}
   .brand h1{font-size:22px;font-weight:800;letter-spacing:-0.01em}
   .brand .sub{color:var(--text-dim);font-size:13px}
   .top-actions{display:flex;align-items:center;gap:8px}
-  button.icon-btn{background:var(--surface);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .15s}
+  button.icon-btn{background:var(--surface);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .15s;flex:none}
   button.icon-btn:hover{border-color:var(--accent)}
   button.icon-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   button.icon-btn svg{width:17px;height:17px}
@@ -45,28 +40,37 @@
   .dot.live{background:var(--good)}
   .dot.error{background:var(--bad)}
 
-  section{margin-bottom:30px}
+  section{margin-bottom:28px}
   section > h2{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-dim);margin-bottom:12px;font-weight:700}
 
-  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
-  .tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 14px 12px;display:flex;flex-direction:column;gap:6px;min-height:74px;justify-content:space-between}
-  .tile .label{font-size:12px;color:var(--text-dim);font-weight:600}
-  .tile .value{font-family:var(--font-mono);font-size:20px;font-weight:600;letter-spacing:-.01em}
+  /* filter bar */
+  #filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:24px}
+  .chip-group{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{background:var(--surface-2);border:1px solid var(--border);color:var(--text-dim);border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+  .chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  select{background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:12.5px;font-weight:600;font-family:var(--font-body)}
+  #filters .sep{width:1px;align-self:stretch;background:var(--border);margin:0 2px}
+  #range-label{color:var(--text-dim);font-size:12px;margin-left:auto;white-space:nowrap}
 
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
-  table td{padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
+  .tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 14px 11px;display:flex;flex-direction:column;gap:5px;min-height:68px;justify-content:space-between}
+  .tile .label{font-size:11.5px;color:var(--text-dim);font-weight:600}
+  .tile .value{font-family:var(--font-mono);font-size:18px;font-weight:600;letter-spacing:-.01em}
+  .tile.derived{background:var(--accent-soft);border-color:transparent}
+
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px}
+  .panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  .panel-head h3{font-size:13.5px;font-weight:700}
+  .chart-wrap{position:relative;height:230px}
+
+  table{width:100%;border-collapse:collapse;font-size:12.8px}
+  .table-wrap{overflow-x:auto;max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;margin-top:12px}
+  table th{position:sticky;top:0;background:var(--surface-2);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);padding:8px 10px;border-bottom:1px solid var(--border)}
+  table td{padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
   table tr:last-child td{border-bottom:none}
-  table td:first-child{color:var(--text-dim);font-weight:600}
-  table td.num{font-family:var(--font-mono);text-align:right}
-  .tp-heading{background:var(--surface-2);font-weight:700;color:var(--text)}
-  .tp-heading td{border-bottom:1px solid var(--border)}
-  .tp-header-row td{font-weight:700;color:var(--text-dim);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
-
-  .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
-  figure{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px;margin:0}
-  figure img{width:100%;display:block;border-radius:6px}
-  figcaption{font-size:12px;color:var(--text-dim);margin-top:8px;font-weight:600}
+  table td.num,table th.num{font-family:var(--font-mono);text-align:right}
+  table tr.zero{opacity:.5}
+  .rank{color:var(--text-dim);font-family:var(--font-mono);font-size:11px}
 
   .empty-card,.error-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:12px}
   .empty-card h3,.error-card h3{font-size:16px}
@@ -81,10 +85,12 @@
 
   #settings-panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:22px;display:flex;flex-direction:column;gap:10px}
   #settings-panel label{font-size:12px;color:var(--text-dim);font-weight:600}
-  .skeleton{background:linear-gradient(90deg,var(--surface-2) 25%,var(--border) 37%,var(--surface-2) 63%);background-size:400% 100%;animation:shimmer 1.4s ease infinite;border-radius:12px;height:74px}
+  .skeleton{background:linear-gradient(90deg,var(--surface-2) 25%,var(--border) 37%,var(--surface-2) 63%);background-size:400% 100%;animation:shimmer 1.4s ease infinite;border-radius:12px;height:68px}
   @keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
   @media (prefers-reduced-motion:reduce){.skeleton{animation:none}}
   footer{color:var(--text-dim);font-size:11.5px;text-align:center;margin-top:36px;line-height:1.6}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:720px){.grid-2{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -92,7 +98,7 @@
 <header class="top">
   <div class="brand">
     <h1>Homelab Pulse</h1>
-    <div class="sub">Live KPI snapshot &middot; pulled from the Homelab sheet</div>
+    <div class="sub">Live BI &middot; filtered straight from the Data tab</div>
   </div>
   <div class="top-actions">
     <button class="icon-btn" id="refresh-btn" title="Refresh" aria-label="Refresh">
@@ -119,7 +125,7 @@
 <div id="empty-state" hidden>
   <div class="empty-card">
     <h3>Connect to the Homelab sheet</h3>
-    <p>This page reads live numbers through a small read-only endpoint published from the Homelab spreadsheet (Apps Script Web App). Paste that URL in Settings to connect &mdash; once it's saved here, this device stays connected on every visit.</p>
+    <p>This page reads raw rows through a small read-only endpoint published from the Homelab spreadsheet (Apps Script Web App) and does all filtering/aggregation here in the browser. Paste that URL in Settings to connect.</p>
     <div class="row"><button class="primary" id="empty-settings-btn">Open settings</button></div>
   </div>
 </div>
@@ -127,25 +133,62 @@
 <div id="error-state" hidden>
   <div class="error-card">
     <h3>Couldn't load data</h3>
-    <p id="error-detail">The endpoint didn't respond. Check the URL in Settings, and that the Apps Script deployment is set to "Anyone" access.</p>
+    <p id="error-detail">The endpoint didn't respond.</p>
     <div class="row"><button class="ghost" id="error-retry">Try again</button><button class="ghost" id="error-settings-btn">Open settings</button></div>
   </div>
 </div>
 
 <main id="content" hidden>
-  <section id="glance-section">
-    <h2 id="glance-title">At a glance</h2>
+  <div id="filters">
+    <div class="chip-group" id="date-chips"></div>
+    <div class="sep"></div>
+    <select id="channel-type-select"><option value="">Channel Type: All</option></select>
+    <select id="type-select">
+      <option value="">Type: All</option>
+      <option value="Premium">Type: Premium</option>
+      <option value="Prescription">Type: Prescription</option>
+      <option value="Free">Type: Free</option>
+    </select>
+    <span id="range-label"></span>
+  </div>
+
+  <section id="tiles-section">
+    <h2>At a glance</h2>
     <div class="tiles" id="tiles"></div>
   </section>
 
-  <section id="tp-section" hidden>
-    <h2>Type Performance</h2>
-    <div class="table-wrap"><table id="tp-table"></table></div>
+  <section id="trend-section">
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Trend</h3>
+        <select id="trend-metric-select"></select>
+      </div>
+      <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+    </div>
   </section>
 
-  <section id="charts-section" hidden>
-    <h2>Charts</h2>
-    <div class="charts" id="charts"></div>
+  <section id="breakdown-section">
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Breakdown &middot; best CPL first</h3>
+        <select id="breakdown-dim-select">
+          <option value="channelType">Channel Type</option>
+          <option value="sourceMedium">Source / Medium</option>
+          <option value="campaign">Campaign</option>
+          <option value="landingPage">Landing Page</option>
+          <option value="copy">Copy</option>
+        </select>
+      </div>
+      <div class="grid-2">
+        <div class="chart-wrap"><canvas id="breakdown-chart"></canvas></div>
+        <div class="table-wrap">
+          <table id="breakdown-table">
+            <thead><tr><th>#</th><th>Group</th><th class="num">Leads</th><th class="num">MQL</th><th class="num">Orders</th><th class="num">Cost</th><th class="num">CPL</th><th class="num">CPO</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </section>
 </main>
 
@@ -153,161 +196,383 @@
 
 <script>
 (function(){
+  // ---------- Jalali <-> Gregorian (jalaali-js algorithm, MIT-licensed public algorithm) ----------
+  function jDiv(a,b){return ~~(a/b);}
+  function jMod(a,b){return a-~~(a/b)*b;}
+  function jalCal(jy){
+    var breaks=[-61,9,38,199,426,686,756,818,1111,1181,1210,1635,2060,2097,2192,2262,2324,2394,2456,3178];
+    var bl=breaks.length, gy=jy+621, leapJ=-14, jp=breaks[0], jm,jump,leap,n,i;
+    for(i=1;i<bl;i+=1){jm=breaks[i];jump=jm-jp;if(jy<jm)break;leapJ=leapJ+jDiv(jump,33)*8+jDiv(jMod(jump,33),4);jp=jm;}
+    n=jy-jp;
+    leapJ=leapJ+jDiv(n,33)*8+jDiv(jMod(n,33)+3,4);
+    if(jMod(jump,33)===4&&jump-n===4) leapJ+=1;
+    var leapG=jDiv(gy,4)-jDiv((jDiv(gy,100)+1)*3,4)-150;
+    var march=20+leapJ-leapG;
+    if(jump-n<6) n=n-jump+jDiv(jump,33)*33;
+    leap=jMod(jMod(n+1,33)-1,4);
+    if(leap===-1)leap=4;
+    return {leap:leap,gy:gy,march:march};
+  }
+  function g2d(gy,gm,gd){
+    var d = jDiv((gy+jDiv(gm-8,6)+100100)*1461,4)+jDiv(153*jMod(gm+9,12)+2,5)+gd-34840408;
+    d = d - jDiv(jDiv(gy+100100+jDiv(gm-8,6),100)*3,4)+752;
+    return d;
+  }
+  function d2g(jdn){
+    var j=4*jdn+139361631;
+    j=j+jDiv(jDiv(4*jdn+183187720,146097)*3,4)*4-3908;
+    var i=jDiv(jMod(j,1461),4)*5+308;
+    var gd=jDiv(jMod(i,153),5)+1;
+    var gm=jMod(jDiv(i,153),12)+1;
+    var gy=jDiv(j,1461)-100100+jDiv(8-gm,6);
+    return {gy:gy,gm:gm,gd:gd};
+  }
+  function toJalaali(gy,gm,gd){
+    var jdn=g2d(gy,gm,gd);
+    var gy2=d2g(jdn).gy, jy=gy2-621, r=jalCal(jy), jdn1f=g2d(r.gy,3,r.march), k=jdn-jdn1f, jm,jd;
+    if(k>=0){
+      if(k<=185){jm=1+jDiv(k,31);jd=jMod(k,31)+1;return {jy:jy,jm:jm,jd:jd};}
+      k-=186;
+    } else {jy-=1;k+=179;if(r.leap===1)k+=1;}
+    jm=7+jDiv(k,30);jd=jMod(k,30)+1;
+    return {jy:jy,jm:jm,jd:jd};
+  }
+  function toGregorian(jy,jm,jd){
+    var r=jalCal(jy);
+    var g=d2g(g2d(r.gy,3,r.march)+(jm-1)*31-jDiv(jm,7)*(jm-7)+jd-1);
+    return g;
+  }
+  var JMONTHS = ['Far','Ord','Kho','Tir','Mor','Sha','Meh','Aba','Aza','Dey','Bah','Esf'];
+
+  function isoFromParts(gy,gm,gd){
+    var mm=(gm<10?'0':'')+gm, dd=(gd<10?'0':'')+gd;
+    return gy+'-'+mm+'-'+dd;
+  }
+  function dateFromISO(iso){ return new Date(iso+'T00:00:00Z'); }
+  function isoAddDays(iso,n){
+    var d=dateFromISO(iso);
+    d.setUTCDate(d.getUTCDate()+n);
+    return isoFromParts(d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate());
+  }
+  function jalaaliLabel(iso){
+    var d=dateFromISO(iso);
+    var j=toJalaali(d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate());
+    return JMONTHS[j.jm-1]+' '+j.jd;
+  }
+
+  // ---------- State ----------
   var LS_KEY = 'homelab_pulse_endpoint';
   var DEFAULT_ENDPOINT = ''; // filled in once the Apps Script Web App is deployed
-  var refreshTimer = null;
+  var RAW = null;          // { fields, rows } as returned by the endpoint
+  var FIELD_IDX = {};      // field name -> column index in each row array
+  var anchorISO = null;    // latest date present in the data ("today" for this dataset)
+  var dateFilter = 'last7'; // yesterday | last7 | last30 | mtd | qtd
+  var channelTypeFilter = '';
+  var typeFilter = '';     // '' | Premium | Prescription | Free
+  var trendMetric = 'leads';
+  var breakdownDim = 'channelType';
+  var charts = { trend: null, breakdown: null };
 
-  var els = {
-    statusDot: document.getElementById('status-dot'),
-    statusText: document.getElementById('status-text'),
-    settingsPanel: document.getElementById('settings-panel'),
-    endpointInput: document.getElementById('endpoint-input'),
-    emptyState: document.getElementById('empty-state'),
-    errorState: document.getElementById('error-state'),
-    errorDetail: document.getElementById('error-detail'),
-    content: document.getElementById('content'),
-    tiles: document.getElementById('tiles'),
-    glanceTitle: document.getElementById('glance-title'),
-    tpSection: document.getElementById('tp-section'),
-    tpTable: document.getElementById('tp-table'),
-    chartsSection: document.getElementById('charts-section'),
-    charts: document.getElementById('charts'),
-    footerTime: document.getElementById('footer-time')
-  };
+  var TYPED_METRICS = ['leads','inzone','mql','orders','cost','upsell'];
+  var METRIC_LABELS = { cost:'Cost (IRR)', impressions:'Impressions', clicks:'Clicks', sessions:'Sessions',
+    leads:'Leads', inzone:'Inzone', mql:'MQL', orders:'Orders', sms:'SMS Sent', upsell:'Upsell',
+    cpl:'CPL', cpo:'CPO', cpmql:'CPMQL' };
 
-  function getEndpoint(){
-    try { return localStorage.getItem(LS_KEY) || DEFAULT_ENDPOINT; } catch(e){ return DEFAULT_ENDPOINT; }
-  }
-  function setEndpoint(url){
-    try { localStorage.setItem(LS_KEY, url); } catch(e){}
-  }
-  function clearEndpoint(){
-    try { localStorage.removeItem(LS_KEY); } catch(e){}
-  }
+  var els = {};
+  ['status-dot','status-text','settings-panel','endpoint-input','empty-state','error-state','error-detail',
+   'content','tiles','date-chips','channel-type-select','type-select','range-label',
+   'trend-metric-select','breakdown-dim-select','footer-time'].forEach(function(id){
+    els[id.replace(/-([a-z])/g,function(_,c){return c.toUpperCase();})] = document.getElementById(id);
+  });
+
+  function getEndpoint(){ try { return localStorage.getItem(LS_KEY) || DEFAULT_ENDPOINT; } catch(e){ return DEFAULT_ENDPOINT; } }
+  function setEndpoint(url){ try { localStorage.setItem(LS_KEY, url); } catch(e){} }
+  function clearEndpoint(){ try { localStorage.removeItem(LS_KEY); } catch(e){} }
 
   function showOnly(id){
-    ['empty-state','error-state','content'].forEach(function(x){
-      document.getElementById(x).hidden = (x !== id);
-    });
+    ['empty-state','error-state','content'].forEach(function(x){ document.getElementById(x).hidden = (x !== id); });
   }
-
   function setStatus(kind, text){
     els.statusDot.className = 'dot' + (kind ? ' ' + kind : '');
     els.statusText.textContent = text;
   }
 
-  function renderGlance(glance){
-    if (!glance || !glance.rows || !glance.rows.length){
-      document.getElementById('glance-section').hidden = true;
-      return;
+  // ---------- Data access helpers ----------
+  function field(row, name){ return row[FIELD_IDX[name]]; }
+  function typedField(row, base){
+    if (!typeFilter) return field(row, base);
+    var key = base + typeFilter; // e.g. leadsPremium is not a field; typed fields are leadPremium etc.
+    return field(row, key);
+  }
+  // typed metric field names don't follow "base+Type" for all — map explicitly
+  var TYPE_FIELD_MAP = {
+    leads: { Premium:'leadPremium', Prescription:'leadPrescription', Free:'leadFree' },
+    inzone: { Premium:'inzonePremium', Prescription:'inzonePrescription', Free:'inzoneFree' },
+    mql: { Premium:'mqlPremium', Prescription:'mqlPrescription', Free:'mqlFree' },
+    orders: { Premium:'orderPremium', Prescription:'orderPrescription', Free:'orderFree' },
+    cost: { Premium:'costPremium', Prescription:'costPrescription', Free:'costFree' },
+    upsell: { Premium:'upsellPremium', Prescription:'upsellPrescription', Free:'upsellFree' }
+  };
+  function metricValue(row, name){
+    if (typeFilter && TYPE_FIELD_MAP[name]) return field(row, TYPE_FIELD_MAP[name][typeFilter]) || 0;
+    return field(row, name) || 0;
+  }
+
+  function dateRangeFor(preset){
+    if (!anchorISO) return null;
+    if (preset === 'yesterday') return { from: isoAddDays(anchorISO,-1), to: isoAddDays(anchorISO,-1) };
+    if (preset === 'last7') return { from: isoAddDays(anchorISO,-6), to: anchorISO };
+    if (preset === 'last30') return { from: isoAddDays(anchorISO,-29), to: anchorISO };
+    if (preset === 'mtd' || preset === 'qtd'){
+      var d = dateFromISO(anchorISO);
+      var j = toJalaali(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate());
+      var startMonth = preset === 'mtd' ? j.jm : (Math.floor((j.jm-1)/3)*3 + 1);
+      var g = toGregorian(j.jy, startMonth, 1);
+      return { from: isoFromParts(g.gy, g.gm, g.gd), to: anchorISO };
     }
-    document.getElementById('glance-section').hidden = false;
-    els.glanceTitle.textContent = glance.title ? glance.title.replace(/\s*·.*/,'') : 'At a glance';
+    return { from: anchorISO, to: anchorISO };
+  }
+
+  function filteredRows(){
+    var range = dateRangeFor(dateFilter);
+    if (!range || !RAW) return [];
+    return RAW.rows.filter(function(row){
+      var d = field(row,'date');
+      if (d < range.from || d > range.to) return false;
+      if (channelTypeFilter && field(row,'channelType') !== channelTypeFilter) return false;
+      return true;
+    });
+  }
+
+  // ---------- Rendering ----------
+  function renderDateChips(){
+    var opts = [['yesterday','Yesterday'],['last7','Last 7 days'],['last30','Last 30 days'],['mtd','Month to date'],['qtd','Quarter to date']];
+    els.dateChips.innerHTML = '';
+    opts.forEach(function(o){
+      var b = document.createElement('button');
+      b.className = 'chip' + (dateFilter === o[0] ? ' active' : '');
+      b.textContent = o[1];
+      b.addEventListener('click', function(){ dateFilter = o[0]; renderAll(); });
+      els.dateChips.appendChild(b);
+    });
+  }
+
+  function renderFilterOptions(){
+    var types = {};
+    RAW.rows.forEach(function(row){ var v = field(row,'channelType'); if (v) types[v] = true; });
+    var current = els.channelTypeSelect.value;
+    els.channelTypeSelect.innerHTML = '<option value="">Channel Type: All</option>';
+    Object.keys(types).sort().forEach(function(t){
+      var o = document.createElement('option'); o.value = t; o.textContent = t;
+      els.channelTypeSelect.appendChild(o);
+    });
+    els.channelTypeSelect.value = current;
+
+    if (!els.trendMetricSelect.options.length){
+      ['leads','inzone','mql','orders','cost','upsell','sessions','impressions','clicks','cpl','cpo','cpmql'].forEach(function(m){
+        var o = document.createElement('option'); o.value = m; o.textContent = METRIC_LABELS[m];
+        els.trendMetricSelect.appendChild(o);
+      });
+      els.trendMetricSelect.value = trendMetric;
+    }
+  }
+
+  function fmtNum(n){ return Math.round(n).toLocaleString('en-US'); }
+  function fmtRatio(n){ return isFinite(n) && n > 0 ? fmtNum(n) : '—'; }
+
+  function computeTotals(rows){
+    var t = { cost:0, impressions:0, clicks:0, sessions:0, sms:0 };
+    TYPED_METRICS.forEach(function(m){ t[m] = 0; });
+    rows.forEach(function(row){
+      t.impressions += field(row,'impressions')||0;
+      t.clicks += field(row,'clicks')||0;
+      t.sessions += field(row,'sessions')||0;
+      t.sms += field(row,'sms')||0;
+      TYPED_METRICS.forEach(function(m){ t[m] += metricValue(row,m); });
+    });
+    t.cpl = t.leads ? t.cost/t.leads : 0;
+    t.cpo = t.orders ? t.cost/t.orders : 0;
+    t.cpmql = t.mql ? t.cost/t.mql : 0;
+    return t;
+  }
+
+  function renderTiles(rows){
+    var t = computeTotals(rows);
+    var order = ['cost','impressions','clicks','sessions','leads','inzone','mql','orders','upsell','sms','cpl','cpo','cpmql'];
     els.tiles.innerHTML = '';
-    glance.rows.forEach(function(row){
+    order.forEach(function(k){
       var tile = document.createElement('div');
-      tile.className = 'tile';
-      var label = document.createElement('div');
-      label.className = 'label';
-      label.textContent = row.metric;
-      var value = document.createElement('div');
-      value.className = 'value tabular';
-      value.textContent = row.value;
-      tile.appendChild(label);
-      tile.appendChild(value);
+      tile.className = 'tile' + (k==='cpl'||k==='cpo'||k==='cpmql' ? ' derived' : '');
+      var label = document.createElement('div'); label.className='label'; label.textContent = METRIC_LABELS[k];
+      var value = document.createElement('div'); value.className='value tabular';
+      value.textContent = (k==='cpl'||k==='cpo'||k==='cpmql') ? fmtRatio(t[k]) : fmtNum(t[k]);
+      tile.appendChild(label); tile.appendChild(value);
       els.tiles.appendChild(tile);
     });
   }
 
-  function renderTypePerformance(tp){
-    if (!tp || !tp.values || !tp.values.length){
-      els.tpSection.hidden = true;
-      return;
-    }
-    els.tpSection.hidden = false;
-    els.tpTable.innerHTML = '';
-    tp.values.forEach(function(row, i){
-      var nonEmpty = row.filter(function(c){ return c !== ''; });
-      if (nonEmpty.length === 0) return; // skip blank spacer rows
-      var tr = document.createElement('tr');
-      if (nonEmpty.length <= 2){
-        // section label row (titles, view/date meta)
-        tr.className = 'tp-heading';
-        var td = document.createElement('td');
-        td.colSpan = row.length;
-        td.textContent = nonEmpty.join('   ');
-        tr.appendChild(td);
+  function renderTrend(rows){
+    var range = dateRangeFor(dateFilter);
+    if (!range) return;
+    var byDay = {};
+    var cur = range.from;
+    while (cur <= range.to){ byDay[cur] = 0; cur = isoAddDays(cur,1); }
+    var cost = {}, count = {};
+    rows.forEach(function(row){
+      var d = field(row,'date');
+      if (!(d in byDay)) return;
+      if (trendMetric === 'cpl' || trendMetric === 'cpo' || trendMetric === 'cpmql'){
+        cost[d] = (cost[d]||0) + metricValue(row,'cost');
+        var denom = trendMetric==='cpl' ? 'leads' : (trendMetric==='cpo' ? 'orders' : 'mql');
+        count[d] = (count[d]||0) + metricValue(row,denom);
+      } else if (['impressions','clicks','sessions'].indexOf(trendMetric) !== -1){
+        byDay[d] += field(row,trendMetric)||0;
       } else {
-        var looksNumeric = row.slice(1).some(function(c){ return /[\d%]/.test(c); });
-        row.forEach(function(cell, ci){
-          if (cell === '' && ci > 0 && row.slice(ci).every(function(c){return c==='';})) return;
-          var td = document.createElement('td');
-          td.textContent = cell;
-          if (ci > 0 && looksNumeric) td.className = 'num';
-          tr.appendChild(td);
-        });
+        byDay[d] += metricValue(row,trendMetric);
       }
-      els.tpTable.appendChild(tr);
+    });
+    var labels = [], values = [];
+    Object.keys(byDay).sort().forEach(function(d){
+      labels.push(jalaaliLabel(d));
+      if (trendMetric==='cpl'||trendMetric==='cpo'||trendMetric==='cpmql'){
+        values.push(count[d] ? Math.round((cost[d]||0)/count[d]) : 0);
+      } else {
+        values.push(byDay[d]);
+      }
+    });
+    var ctx = document.getElementById('trend-chart');
+    var textColor = getComputedStyle(document.body).getPropertyValue('--text-dim').trim();
+    var gridColor = getComputedStyle(document.body).getPropertyValue('--border').trim();
+    var accent = getComputedStyle(document.body).getPropertyValue('--accent').trim();
+    if (charts.trend) charts.trend.destroy();
+    charts.trend = new Chart(ctx, {
+      type: 'line',
+      data: { labels: labels, datasets: [{ data: values, borderColor: accent, backgroundColor: accent+'33',
+        fill: true, tension: .3, pointRadius: labels.length>20?0:3 }] },
+      options: { responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false} },
+        scales:{ x:{ ticks:{ color:textColor, maxRotation:0, autoSkip:true }, grid:{ display:false } },
+                 y:{ ticks:{ color:textColor }, grid:{ color:gridColor }, beginAtZero:true } } }
     });
   }
 
-  function renderCharts(charts){
-    if (!charts || !charts.length){
-      els.chartsSection.hidden = true;
-      return;
+  var DIM_LABEL = { channelType:'Channel Type', sourceMedium:'Source / Medium', campaign:'Campaign', landingPage:'Landing Page', copy:'Copy' };
+
+  function groupKey(row, dim){
+    if (dim === 'sourceMedium'){
+      var s = field(row,'source')||'(not set)', m = field(row,'medium')||'(not set)';
+      return s+' / '+m;
     }
-    els.chartsSection.hidden = false;
-    els.charts.innerHTML = '';
-    charts.forEach(function(c){
-      var fig = document.createElement('figure');
-      var img = document.createElement('img');
-      img.src = c.image;
-      img.alt = c.title || 'Chart';
-      var cap = document.createElement('figcaption');
-      cap.textContent = c.title || '';
-      fig.appendChild(img);
-      if (c.title) fig.appendChild(cap);
-      els.charts.appendChild(fig);
+    var v = field(row, dim);
+    return v || '(not set)';
+  }
+
+  function renderBreakdown(rows){
+    var groups = {};
+    rows.forEach(function(row){
+      var key = groupKey(row, breakdownDim);
+      if (!groups[key]) groups[key] = { leads:0, mql:0, orders:0, cost:0 };
+      var g = groups[key];
+      g.leads += metricValue(row,'leads');
+      g.mql += metricValue(row,'mql');
+      g.orders += metricValue(row,'orders');
+      g.cost += metricValue(row,'cost');
+    });
+    var list = Object.keys(groups).map(function(k){
+      var g = groups[k];
+      g.name = k; g.cpl = g.leads ? g.cost/g.leads : 0; g.cpo = g.orders ? g.cost/g.orders : 0;
+      return g;
+    });
+    list.sort(function(a,b){
+      if (!a.leads && !b.leads) return b.cost - a.cost;
+      if (!a.leads) return 1;
+      if (!b.leads) return -1;
+      return a.cpl - b.cpl;
+    });
+
+    var tbody = document.querySelector('#breakdown-table tbody');
+    tbody.innerHTML = '';
+    list.forEach(function(g, i){
+      var tr = document.createElement('tr');
+      if (!g.leads) tr.className = 'zero';
+      tr.innerHTML = '<td class="rank">'+(i+1)+'</td><td>'+escapeHtml(g.name)+'</td>'+
+        '<td class="num">'+fmtNum(g.leads)+'</td><td class="num">'+fmtNum(g.mql)+'</td>'+
+        '<td class="num">'+fmtNum(g.orders)+'</td><td class="num">'+fmtNum(g.cost)+'</td>'+
+        '<td class="num">'+fmtRatio(g.cpl)+'</td><td class="num">'+fmtRatio(g.cpo)+'</td>';
+      tbody.appendChild(tr);
+    });
+
+    var top = list.filter(function(g){return g.leads>0;}).slice(0,12);
+    var ctx = document.getElementById('breakdown-chart');
+    var textColor = getComputedStyle(document.body).getPropertyValue('--text-dim').trim();
+    var gridColor = getComputedStyle(document.body).getPropertyValue('--border').trim();
+    var accent = getComputedStyle(document.body).getPropertyValue('--accent').trim();
+    if (charts.breakdown) charts.breakdown.destroy();
+    charts.breakdown = new Chart(ctx, {
+      type: 'bar',
+      data: { labels: top.map(function(g){return g.name;}), datasets: [{ data: top.map(function(g){return g.cpl;}), backgroundColor: accent }] },
+      options: { indexAxis: 'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false} },
+        scales:{ x:{ ticks:{ color:textColor }, grid:{ color:gridColor }, beginAtZero:true },
+                 y:{ ticks:{ color:textColor, autoSkip:false }, grid:{ display:false } } } }
     });
   }
 
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  function renderRangeLabel(){
+    var range = dateRangeFor(dateFilter);
+    if (!range) { els.rangeLabel.textContent = ''; return; }
+    els.rangeLabel.textContent = jalaaliLabel(range.from) + ' → ' + jalaaliLabel(range.to) + ' (as of latest data)';
+  }
+
+  function renderAll(){
+    renderDateChips();
+    renderRangeLabel();
+    var rows = filteredRows();
+    renderTiles(rows);
+    renderTrend(rows);
+    renderBreakdown(rows);
+  }
+
+  // ---------- Load ----------
   function skeletonTiles(){
-    document.getElementById('glance-section').hidden = false;
+    document.getElementById('tiles-section').hidden = false;
     els.tiles.innerHTML = '';
-    for (var i=0;i<8;i++){
-      var s = document.createElement('div');
-      s.className = 'skeleton';
-      els.tiles.appendChild(s);
-    }
+    for (var i=0;i<9;i++){ var s = document.createElement('div'); s.className = 'skeleton'; els.tiles.appendChild(s); }
+  }
+
+  function ingest(payload){
+    RAW = payload.raw || { fields: [], rows: [] };
+    FIELD_IDX = {};
+    RAW.fields.forEach(function(f,i){ FIELD_IDX[f] = i; });
+    anchorISO = null;
+    RAW.rows.forEach(function(row){
+      var d = field(row,'date');
+      if (!anchorISO || d > anchorISO) anchorISO = d;
+    });
+    renderFilterOptions();
+    renderAll();
   }
 
   function load(isManual){
     var endpoint = getEndpoint();
-    if (!endpoint){
-      showOnly('empty-state');
-      setStatus('', 'Not connected yet');
-      return;
-    }
+    if (!endpoint){ showOnly('empty-state'); setStatus('', 'Not connected yet'); return; }
     showOnly('content');
     if (isManual) skeletonTiles();
     setStatus('', 'Loading…');
     fetch(endpoint, { cache: 'no-store' })
-      .then(function(res){
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      })
+      .then(function(res){ if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
       .then(function(data){
-        renderGlance(data.glance);
-        renderTypePerformance(data.typePerformance);
-        renderCharts(data.charts);
+        ingest(data);
         showOnly('content');
-        setStatus('live', 'Live');
+        setStatus('live', (RAW.rows.length) + ' rows loaded');
         var t = data.generatedAt ? new Date(data.generatedAt) : new Date();
         els.footerTime.textContent = t.toLocaleString();
       })
       .catch(function(err){
         showOnly('error-state');
-        els.errorDetail.textContent = 'The endpoint didn\'t respond (' + err.message + '). Check the URL in Settings, and that the Apps Script deployment is set to "Anyone" access.';
+        els.errorDetail.textContent = 'The endpoint didn\'t respond (' + err.message + '). Check the URL in Settings, and that the Apps Script deployment is set to "Anyone" access and redeployed with the latest code.';
         setStatus('error', 'Connection failed');
       });
   }
@@ -319,27 +584,21 @@
   document.getElementById('error-retry').addEventListener('click', function(){ load(true); });
   document.getElementById('close-settings').addEventListener('click', function(){ els.settingsPanel.hidden = true; });
   document.getElementById('clear-endpoint').addEventListener('click', function(){
-    clearEndpoint();
-    els.endpointInput.value = '';
-    els.settingsPanel.hidden = true;
-    load();
+    clearEndpoint(); els.endpointInput.value = ''; els.settingsPanel.hidden = true; load();
   });
   document.getElementById('save-endpoint').addEventListener('click', function(){
-    var v = els.endpointInput.value.trim();
-    if (!v) return;
-    setEndpoint(v);
-    els.settingsPanel.hidden = true;
-    load(true);
+    var v = els.endpointInput.value.trim(); if (!v) return;
+    setEndpoint(v); els.settingsPanel.hidden = true; load(true);
   });
+  els.channelTypeSelect.addEventListener('change', function(){ channelTypeFilter = els.channelTypeSelect.value; renderAll(); });
+  els.typeSelect.addEventListener('change', function(){ typeFilter = els.typeSelect.value; renderAll(); });
+  els.trendMetricSelect.addEventListener('change', function(){ trendMetric = els.trendMetricSelect.value; renderTrend(filteredRows()); });
+  els.breakdownDimSelect.addEventListener('change', function(){ breakdownDim = els.breakdownDimSelect.value; renderBreakdown(filteredRows()); });
 
-  function openSettings(){
-    els.endpointInput.value = getEndpoint();
-    els.settingsPanel.hidden = false;
-    els.endpointInput.focus();
-  }
+  function openSettings(){ els.endpointInput.value = getEndpoint(); els.settingsPanel.hidden = false; els.endpointInput.focus(); }
 
   load();
-  refreshTimer = setInterval(function(){ load(false); }, 5 * 60 * 1000);
+  setInterval(function(){ load(false); }, 5 * 60 * 1000);
 })();
 </script>
 </body>
