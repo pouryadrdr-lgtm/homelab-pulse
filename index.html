@@ -380,7 +380,7 @@
   var TARGETS_BY_KEY = {}; // "year|MonthName" -> target row
   var CHANNEL_TYPES = [];  // full canonical list from Settings (not just what's present in loaded rows)
   var anchorISO = null;    // latest date present in the data ("today" for this dataset)
-  var dateFilter = 'last7'; // yesterday | last7 | last30 | mtd | qtd
+  var dateFilter = 'last7'; // lastday | last7 | last30 | mtd | qtd
   var channelTypeFilter = '';
   var typeFilter = '';     // '' | Premium | Prescription | Free
   var trendMetric = 'leads';
@@ -464,7 +464,7 @@
   }
 
   // Target info for the CURRENT date-range preset. Mirrors the sheet's own Performance Snapshot math:
-  // closed windows (yesterday/7d/30d) get a target prorated to that many days of the anchor month;
+  // closed windows (last day/7d/30d) get a target prorated to that many days of the anchor month;
   // open windows (MTD/QTD) get the FULL period target plus a separate "pace" denominator prorated to
   // elapsed days, so pace measures "will I hit the full target at this rate" (a rate metric's pace
   // just equals its attainment, since rates don't accrue with elapsed time).
@@ -477,8 +477,8 @@
       ? function(jy,jmIdx){ return monthlyRatioTarget(metricKey, jy, jmIdx); }
       : function(jy,jmIdx){ return monthlyTargetFor(metricKey, jy, jmIdx); };
 
-    if (dateFilter === 'yesterday' || dateFilter === 'last7' || dateFilter === 'last30'){
-      var n = dateFilter === 'yesterday' ? 1 : (dateFilter === 'last7' ? 7 : 30);
+    if (dateFilter === 'lastday' || dateFilter === 'last7' || dateFilter === 'last30'){
+      var n = dateFilter === 'lastday' ? 1 : (dateFilter === 'last7' ? 7 : 30);
       var dim = daysInJalaliMonth(j.jy, j.jm);
       var mTarget = getMonthly(j.jy, j.jm);
       var target = isRatio ? mTarget : (mTarget/dim*n);
@@ -526,7 +526,7 @@
 
   function dateRangeFor(preset){
     if (!anchorISO) return null;
-    if (preset === 'yesterday') return { from: isoAddDays(anchorISO,-1), to: isoAddDays(anchorISO,-1) };
+    if (preset === 'lastday') return { from: anchorISO, to: anchorISO };
     if (preset === 'last7') return { from: isoAddDays(anchorISO,-6), to: anchorISO };
     if (preset === 'last30') return { from: isoAddDays(anchorISO,-29), to: anchorISO };
     if (preset === 'mtd' || preset === 'qtd'){
@@ -622,7 +622,7 @@
 
   // ---------- Rendering ----------
   function renderDateChips(){
-    var opts = [['yesterday','Yesterday'],['last7','Last 7 days'],['last30','Last 30 days'],['mtd','Month to date'],['qtd','Quarter to date']];
+    var opts = [['lastday','Last day with data'],['last7','Last 7 days'],['last30','Last 30 days'],['mtd','Month to date'],['qtd','Quarter to date']];
     els.dateChips.innerHTML = '';
     opts.forEach(function(o){
       var b = document.createElement('button');
