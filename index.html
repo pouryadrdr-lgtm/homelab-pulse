@@ -63,6 +63,11 @@
   select{background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:7px 10px;font-size:12.5px;font-weight:600;font-family:var(--font-body);transition:border-color .16s var(--ease-out)}
   select:hover{border-color:var(--border-strong)}
   select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  #custom-range{display:flex;align-items:center;gap:6px}
+  #custom-range .to-sep{color:var(--text-faint);font-size:12px}
+  input[type=date]{background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:6px 8px;font-size:12.5px;font-weight:600;font-family:var(--font-body);transition:border-color .16s var(--ease-out);color-scheme:light dark}
+  input[type=date]:hover{border-color:var(--border-strong)}
+  input[type=date]:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
   #filters .sep{width:1px;align-self:stretch;background:var(--border);margin:0 2px}
   #range-label{color:var(--text-faint);font-size:11.5px;margin-left:auto;white-space:nowrap;font-variant-numeric:tabular-nums}
 
@@ -185,7 +190,13 @@
       <option value="last30">Last 30 days</option>
       <option value="mtd">Month to date</option>
       <option value="qtd">Quarter to date</option>
+      <option value="custom">Custom range&hellip;</option>
     </select>
+    <div id="custom-range" hidden>
+      <input type="date" id="custom-from" aria-label="From date">
+      <span class="to-sep">&rarr;</span>
+      <input type="date" id="custom-to" aria-label="To date">
+    </div>
     <div class="sep"></div>
     <select id="channel-type-select"><option value="">Channel Type: All</option></select>
     <select id="type-select">
@@ -381,7 +392,9 @@
   var TARGETS_BY_KEY = {}; // "year|MonthName" -> target row
   var CHANNEL_TYPES = [];  // full canonical list from Settings (not just what's present in loaded rows)
   var anchorISO = null;    // latest date present in the data ("today" for this dataset)
-  var dateFilter = 'last7'; // lastday | last7 | last30 | mtd | qtd
+  var minISO = null;       // earliest date present in the data (bounds the custom-range pickers)
+  var dateFilter = 'last7'; // lastday | last7 | last30 | mtd | qtd | custom
+  var customFrom = null, customTo = null; // ISO strings, only used when dateFilter === 'custom'
   var channelTypeFilter = '';
   var typeFilter = '';     // '' | Premium | Prescription | Free
   var trendMetric = 'leads';
@@ -396,7 +409,7 @@
 
   var els = {};
   ['status-dot','status-text','settings-panel','endpoint-input','empty-state','error-state','error-detail',
-   'content','tiles','date-filter-select','channel-type-select','type-select','range-label',
+   'content','tiles','date-filter-select','custom-range','custom-from','custom-to','channel-type-select','type-select','range-label',
    'trend-metric-select','breakdown-dim-select','footer-time',
    'lp-summary','cp-summary','brief-tiles'].forEach(function(id){
     els[id.replace(/-([a-z])/g,function(_,c){return c.toUpperCase();})] = document.getElementById(id);
@@ -537,6 +550,11 @@
       var g = toGregorian(j.jy, startMonth, 1);
       return { from: isoFromParts(g.gy, g.gm, g.gd), to: anchorISO };
     }
+    if (preset === 'custom'){
+      var from = customFrom || anchorISO, to = customTo || anchorISO;
+      if (from > to){ var tmp = from; from = to; to = tmp; }
+      return { from: from, to: to };
+    }
     return { from: anchorISO, to: anchorISO };
   }
 
@@ -624,6 +642,7 @@
   // ---------- Rendering ----------
   function syncDateFilterSelect(){
     els.dateFilterSelect.value = dateFilter;
+    els.customRange.hidden = (dateFilter !== 'custom');
   }
 
   function renderFilterOptions(){
@@ -994,11 +1013,18 @@
     RAW = payload.raw || { fields: [], rows: [] };
     FIELD_IDX = {};
     RAW.fields.forEach(function(f,i){ FIELD_IDX[f] = i; });
-    anchorISO = null;
+    anchorISO = null; minISO = null;
     RAW.rows.forEach(function(row){
       var d = field(row,'date');
       if (!anchorISO || d > anchorISO) anchorISO = d;
+      if (!minISO || d < minISO) minISO = d;
     });
+    if (anchorISO){
+      els.customFrom.min = els.customTo.min = minISO;
+      els.customFrom.max = els.customTo.max = anchorISO;
+      if (!customFrom) customFrom = els.customFrom.value = anchorISO;
+      if (!customTo) customTo = els.customTo.value = anchorISO;
+    }
 
     TARGETS = payload.targets || { fields: [], rows: [] };
     TARGET_IDX = {};
@@ -1056,6 +1082,8 @@
   els.trendMetricSelect.addEventListener('change', function(){ trendMetric = els.trendMetricSelect.value; renderTrend(filteredRows()); });
   els.breakdownDimSelect.addEventListener('change', function(){ breakdownDim = els.breakdownDimSelect.value; renderBreakdown(filteredRows()); });
   els.dateFilterSelect.addEventListener('change', function(){ dateFilter = els.dateFilterSelect.value; renderAll(); });
+  els.customFrom.addEventListener('change', function(){ customFrom = els.customFrom.value; renderAll(); });
+  els.customTo.addEventListener('change', function(){ customTo = els.customTo.value; renderAll(); });
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.addEventListener('click', function(){ switchTab(b.dataset.tab); }); });
 
   function openSettings(){ els.endpointInput.value = getEndpoint(); showSettingsPanel(); els.endpointInput.focus(); }
