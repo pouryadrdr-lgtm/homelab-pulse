@@ -60,11 +60,6 @@
 
   /* filter bar */
   #filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px;margin-bottom:20px;box-shadow:var(--shadow-sm)}
-  .chip-group{display:flex;gap:6px;flex-wrap:wrap}
-  .chip{background:var(--surface-2);border:1px solid var(--border);color:var(--text-dim);border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .16s var(--ease-out),border-color .16s var(--ease-out),color .16s var(--ease-out),transform .1s var(--ease-out)}
-  .chip:hover{border-color:var(--border-strong);color:var(--text)}
-  .chip:active{transform:scale(.96)}
-  .chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
   select{background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:7px 10px;font-size:12.5px;font-weight:600;font-family:var(--font-body);transition:border-color .16s var(--ease-out)}
   select:hover{border-color:var(--border-strong)}
   select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -184,7 +179,13 @@
 
 <main id="content" hidden>
   <div id="filters">
-    <div class="chip-group" id="date-chips"></div>
+    <select id="date-filter-select">
+      <option value="lastday">Last day with data</option>
+      <option value="last7">Last 7 days</option>
+      <option value="last30">Last 30 days</option>
+      <option value="mtd">Month to date</option>
+      <option value="qtd">Quarter to date</option>
+    </select>
     <div class="sep"></div>
     <select id="channel-type-select"><option value="">Channel Type: All</option></select>
     <select id="type-select">
@@ -395,7 +396,7 @@
 
   var els = {};
   ['status-dot','status-text','settings-panel','endpoint-input','empty-state','error-state','error-detail',
-   'content','tiles','date-chips','channel-type-select','type-select','range-label',
+   'content','tiles','date-filter-select','channel-type-select','type-select','range-label',
    'trend-metric-select','breakdown-dim-select','footer-time',
    'lp-summary','cp-summary','brief-tiles'].forEach(function(id){
     els[id.replace(/-([a-z])/g,function(_,c){return c.toUpperCase();})] = document.getElementById(id);
@@ -621,16 +622,8 @@
   }
 
   // ---------- Rendering ----------
-  function renderDateChips(){
-    var opts = [['lastday','Last day with data'],['last7','Last 7 days'],['last30','Last 30 days'],['mtd','Month to date'],['qtd','Quarter to date']];
-    els.dateChips.innerHTML = '';
-    opts.forEach(function(o){
-      var b = document.createElement('button');
-      b.className = 'chip' + (dateFilter === o[0] ? ' active' : '');
-      b.textContent = o[1];
-      b.addEventListener('click', function(){ dateFilter = o[0]; renderAll(); });
-      els.dateChips.appendChild(b);
-    });
+  function syncDateFilterSelect(){
+    els.dateFilterSelect.value = dateFilter;
   }
 
   function renderFilterOptions(){
@@ -985,7 +978,7 @@
   }
 
   function renderAll(){
-    renderDateChips();
+    syncDateFilterSelect();
     renderRangeLabel();
     renderActiveTab();
   }
@@ -1062,6 +1055,7 @@
   els.typeSelect.addEventListener('change', function(){ typeFilter = els.typeSelect.value; renderAll(); });
   els.trendMetricSelect.addEventListener('change', function(){ trendMetric = els.trendMetricSelect.value; renderTrend(filteredRows()); });
   els.breakdownDimSelect.addEventListener('change', function(){ breakdownDim = els.breakdownDimSelect.value; renderBreakdown(filteredRows()); });
+  els.dateFilterSelect.addEventListener('change', function(){ dateFilter = els.dateFilterSelect.value; renderAll(); });
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.addEventListener('click', function(){ switchTab(b.dataset.tab); }); });
 
   function openSettings(){ els.endpointInput.value = getEndpoint(); showSettingsPanel(); els.endpointInput.focus(); }
