@@ -63,11 +63,10 @@
   select{background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:7px 10px;font-size:12.5px;font-weight:600;font-family:var(--font-body);transition:border-color .16s var(--ease-out)}
   select:hover{border-color:var(--border-strong)}
   select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-  #custom-range{display:flex;align-items:center;gap:6px}
+  #custom-range{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   #custom-range .to-sep{color:var(--text-faint);font-size:12px}
-  input[type=date]{background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:6px 8px;font-size:12.5px;font-weight:600;font-family:var(--font-body);transition:border-color .16s var(--ease-out);color-scheme:light dark}
-  input[type=date]:hover{border-color:var(--border-strong)}
-  input[type=date]:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .jdate-group{display:flex;gap:4px}
+  .jdate-group select{padding:7px 6px}
   #filters .sep{width:1px;align-self:stretch;background:var(--border);margin:0 2px}
   #range-label{color:var(--text-faint);font-size:11.5px;margin-left:auto;white-space:nowrap;font-variant-numeric:tabular-nums}
 
@@ -193,9 +192,17 @@
       <option value="custom">Custom range&hellip;</option>
     </select>
     <div id="custom-range" hidden>
-      <input type="date" id="custom-from" aria-label="From date">
+      <div class="jdate-group">
+        <select id="from-y" aria-label="From year"></select>
+        <select id="from-m" aria-label="From month"></select>
+        <select id="from-d" aria-label="From day"></select>
+      </div>
       <span class="to-sep">&rarr;</span>
-      <input type="date" id="custom-to" aria-label="To date">
+      <div class="jdate-group">
+        <select id="to-y" aria-label="To year"></select>
+        <select id="to-m" aria-label="To month"></select>
+        <select id="to-d" aria-label="To day"></select>
+      </div>
     </div>
     <div class="sep"></div>
     <select id="channel-type-select"><option value="">Channel Type: All</option></select>
@@ -409,7 +416,7 @@
 
   var els = {};
   ['status-dot','status-text','settings-panel','endpoint-input','empty-state','error-state','error-detail',
-   'content','tiles','date-filter-select','custom-range','custom-from','custom-to','channel-type-select','type-select','range-label',
+   'content','tiles','date-filter-select','custom-range','from-y','from-m','from-d','to-y','to-m','to-d','channel-type-select','type-select','range-label',
    'trend-metric-select','breakdown-dim-select','footer-time',
    'lp-summary','cp-summary','brief-tiles'].forEach(function(id){
     els[id.replace(/-([a-z])/g,function(_,c){return c.toUpperCase();})] = document.getElementById(id);
@@ -556,6 +563,64 @@
       return { from: from, to: to };
     }
     return { from: anchorISO, to: anchorISO };
+  }
+
+  // ---------- Custom-range Jalali (Shamsi) picker ----------
+  // Native <input type="date"> has no Jalali calendar in any browser, so the custom-range picker is
+  // built from three plain selects (Year/Month/Day) instead, reusing the same toJalaali/toGregorian
+  // conversion the rest of the app already uses for display labels.
+  function fillSelect(el, options, selectedValue){
+    el.innerHTML = '';
+    options.forEach(function(o){
+      var opt = document.createElement('option');
+      opt.value = o[0]; opt.textContent = o[1];
+      el.appendChild(opt);
+    });
+    el.value = selectedValue;
+  }
+
+  function populateJalaliPickers(){
+    if (!anchorISO || !minISO) return;
+    var dMin = dateFromISO(minISO), dMax = dateFromISO(anchorISO);
+    var jMin = toJalaali(dMin.getUTCFullYear(), dMin.getUTCMonth()+1, dMin.getUTCDate());
+    var jMax = toJalaali(dMax.getUTCFullYear(), dMax.getUTCMonth()+1, dMax.getUTCDate());
+    var years = [];
+    for (var y = jMin.jy; y <= jMax.jy; y++) years.push([y, y]);
+    var months = JMONTHS_FULL.map(function(name, i){ return [i+1, name]; });
+
+    ['from','to'].forEach(function(prefix){
+      var ySel = els[prefix+'Y'], mSel = els[prefix+'M'];
+      var already = ySel.options.length > 0;
+      fillSelect(ySel, years, already ? ySel.value : jMax.jy);
+      fillSelect(mSel, months, already ? mSel.value : jMax.jm);
+      populateDayOptions(prefix, already ? null : jMax.jd);
+    });
+    if (!customFrom) customFrom = readJalaliDate('from');
+    if (!customTo) customTo = readJalaliDate('to');
+  }
+
+  function populateDayOptions(prefix, forceDay){
+    var ySel = els[prefix+'Y'], mSel = els[prefix+'M'], dSel = els[prefix+'D'];
+    var jy = parseInt(ySel.value, 10), jm = parseInt(mSel.value, 10);
+    var n = daysInJalaliMonth(jy, jm);
+    var prevDay = forceDay || parseInt(dSel.value, 10) || 1;
+    if (prevDay > n) prevDay = n;
+    var days = [];
+    for (var d = 1; d <= n; d++) days.push([d, d]);
+    fillSelect(dSel, days, prevDay);
+  }
+
+  function readJalaliDate(prefix){
+    var jy = parseInt(els[prefix+'Y'].value, 10), jm = parseInt(els[prefix+'M'].value, 10), jd = parseInt(els[prefix+'D'].value, 10);
+    var g = toGregorian(jy, jm, jd);
+    return isoFromParts(g.gy, g.gm, g.gd);
+  }
+
+  function onCustomDateChange(prefix){
+    populateDayOptions(prefix);
+    var iso = readJalaliDate(prefix);
+    if (prefix === 'from') customFrom = iso; else customTo = iso;
+    renderAll();
   }
 
   function filteredRows(){
@@ -1019,12 +1084,7 @@
       if (!anchorISO || d > anchorISO) anchorISO = d;
       if (!minISO || d < minISO) minISO = d;
     });
-    if (anchorISO){
-      els.customFrom.min = els.customTo.min = minISO;
-      els.customFrom.max = els.customTo.max = anchorISO;
-      if (!customFrom) customFrom = els.customFrom.value = anchorISO;
-      if (!customTo) customTo = els.customTo.value = anchorISO;
-    }
+    if (anchorISO) populateJalaliPickers();
 
     TARGETS = payload.targets || { fields: [], rows: [] };
     TARGET_IDX = {};
@@ -1082,8 +1142,8 @@
   els.trendMetricSelect.addEventListener('change', function(){ trendMetric = els.trendMetricSelect.value; renderTrend(filteredRows()); });
   els.breakdownDimSelect.addEventListener('change', function(){ breakdownDim = els.breakdownDimSelect.value; renderBreakdown(filteredRows()); });
   els.dateFilterSelect.addEventListener('change', function(){ dateFilter = els.dateFilterSelect.value; renderAll(); });
-  els.customFrom.addEventListener('change', function(){ customFrom = els.customFrom.value; renderAll(); });
-  els.customTo.addEventListener('change', function(){ customTo = els.customTo.value; renderAll(); });
+  ['fromY','fromM','fromD'].forEach(function(k){ els[k].addEventListener('change', function(){ onCustomDateChange('from'); }); });
+  ['toY','toM','toD'].forEach(function(k){ els[k].addEventListener('change', function(){ onCustomDateChange('to'); }); });
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.addEventListener('click', function(){ switchTab(b.dataset.tab); }); });
 
   function openSettings(){ els.endpointInput.value = getEndpoint(); showSettingsPanel(); els.endpointInput.focus(); }
