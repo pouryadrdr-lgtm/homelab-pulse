@@ -760,10 +760,11 @@
     var order = ['cost','impressions','clicks','sessions','leads','inzone','mql','orders','upsell','sms','cpl','cpo','cpmql'];
     els.tiles.innerHTML = '';
     order.forEach(function(k){
+      var actual = t[k];
+      if (!actual) return; // hide tiles with no data for the current filter — keeps the grid focused
       var isDerived = (k==='cpl'||k==='cpo'||k==='cpmql');
       var tile = document.createElement('div');
       tile.className = 'tile' + (isDerived ? ' derived' : '');
-      var actual = t[k];
       var html = '<div class="label">'+METRIC_LABELS[k]+'</div>'+
         '<div class="value tabular"></div>';
 
@@ -1006,6 +1007,7 @@
 
     els.briefTiles.innerHTML = '';
     tiles.forEach(function(spec){
+      if (!spec.value) return; // hide tiles with no data for the current filter
       var tile = document.createElement('div');
       tile.className = 'tile';
       var isRatio = spec.key === 'cpmql';
