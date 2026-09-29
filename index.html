@@ -822,18 +822,32 @@
     var labelColor = getComputedStyle(document.body).getPropertyValue('--text').trim();
     var gridColor = getComputedStyle(document.body).getPropertyValue('--border').trim();
     var accent = getComputedStyle(document.body).getPropertyValue('--accent').trim();
+    var faint = getComputedStyle(document.body).getPropertyValue('--text-faint').trim();
     var fmtLabel = (trendMetric==='cpl'||trendMetric==='cpo'||trendMetric==='cpmql') ? fmtRatio : fmtNum;
     // Data labels on every point get unreadable past ~20 points (Last 30 days / Quarter to date) —
     // same threshold the chart already uses to hide individual point markers.
     var showLabels = labels.length <= 20;
+    // Target reference line: a rate metric's target is a constant rate (not prorated by day), everything
+    // else gets the period target spread evenly across the visible days as a flat "pace" benchmark.
+    var isRatioMetric = trendMetric==='cpl'||trendMetric==='cpo'||trendMetric==='cpmql';
+    var info = TARGETABLE_METRICS[trendMetric] ? periodTargetInfo(trendMetric) : null;
+    var targetPerDay = (info && info.target) ? (isRatioMetric ? info.target : info.target/labels.length) : null;
+    var datasets = [{ label:'Actual', data: values, borderColor: accent, backgroundColor: accent+'33',
+      fill: true, tension: .3, pointRadius: labels.length>20?0:3 }];
+    if (targetPerDay){
+      datasets.push({ label:'Target', data: labels.map(function(){ return targetPerDay; }),
+        borderColor: faint, borderDash:[5,4], borderWidth:1.5, pointRadius:0, fill:false, tension:0,
+        datalabels:{ display:false } });
+    }
     if (charts.trend) charts.trend.destroy();
     charts.trend = new Chart(ctx, {
       type: 'line',
-      data: { labels: labels, datasets: [{ data: values, borderColor: accent, backgroundColor: accent+'33',
-        fill: true, tension: .3, pointRadius: labels.length>20?0:3 }] },
+      data: { labels: labels, datasets: datasets },
       options: { responsive:true, maintainAspectRatio:false,
         layout:{ padding:{ top: showLabels ? 20 : 6 } },
-        plugins:{ legend:{display:false},
+        plugins:{ legend:{ display: !!targetPerDay, position:'top', align:'end',
+            labels:{ color:textColor, boxWidth:14, boxHeight:2, padding:12,
+              font:{ family:"'Public Sans', sans-serif", size:10.5 } } },
           datalabels:{ display: showLabels, color: labelColor, anchor:'end', align:'top', offset:6,
             font:{ family: "'IBM Plex Mono', monospace", size: 10, weight: '600' },
             formatter: function(v){ return fmtLabel(v); } } },
