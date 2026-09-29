@@ -531,6 +531,33 @@
       var paceDenom2 = isRatio ? full2 : full2*elapsedDays/totalDays;
       return { target: full2, paceDenom: paceDenom2 };
     }
+    if (dateFilter === 'custom'){
+      // A closed, possibly multi-month window (unlike MTD/QTD, no "pace" — it has a definite end date).
+      // Each touched month contributes its target prorated to how many of its days fall in the range;
+      // rate metrics (isRatio) sum the raw cost/denominator targets across months, un-prorated, same as
+      // QTD, since a rate target doesn't scale with elapsed days.
+      var range = dateRangeFor('custom');
+      if (!range) return { target: getMonthly(j.jy, j.jm), paceDenom: null };
+      var df = dateFromISO(range.from), dt = dateFromISO(range.to);
+      var jf = toJalaali(df.getUTCFullYear(), df.getUTCMonth()+1, df.getUTCDate());
+      var jt = toJalaali(dt.getUTCFullYear(), dt.getUTCMonth()+1, dt.getUTCDate());
+      var costSum3 = 0, denSum3 = 0, fullSum3 = 0;
+      var cy = jf.jy, cm = jf.jm;
+      while (cy < jt.jy || (cy === jt.jy && cm <= jt.jm)){
+        var dim4 = daysInJalaliMonth(cy, cm);
+        var startDay = (cy === jf.jy && cm === jf.jm) ? jf.jd : 1;
+        var endDay = (cy === jt.jy && cm === jt.jm) ? jt.jd : dim4;
+        if (isRatio){
+          costSum3 += monthlyTargetFor('cost', cy, cm);
+          denSum3 += monthlyTargetFor(RATIO_DENOM[metricKey], cy, cm);
+        } else {
+          fullSum3 += monthlyTargetFor(metricKey, cy, cm) * (endDay-startDay+1)/dim4;
+        }
+        cm++; if (cm > 12){ cm = 1; cy++; }
+      }
+      var full3 = isRatio ? (denSum3 ? costSum3/denSum3 : 0) : fullSum3;
+      return { target: full3, paceDenom: null };
+    }
     return { target: getMonthly(j.jy, j.jm), paceDenom: null };
   }
 
