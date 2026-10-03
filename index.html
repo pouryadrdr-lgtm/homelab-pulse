@@ -100,7 +100,17 @@
 
   table{width:100%;border-collapse:collapse;font-size:12.8px}
   .table-wrap{overflow-x:auto;max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-md);margin-top:12px}
+  .table-wrap.expanded{max-height:640px}
+  .fc-toggle{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer;user-select:none;padding:0 2px}
+  .fc-toggle input{accent-color:var(--warn);width:14px;height:14px;margin:0;cursor:pointer}
+  .fc-toggle.disabled{opacity:.45;cursor:not-allowed}
+  .fc-toggle.disabled input{cursor:not-allowed}
+  .fc-hint{font-size:11.5px;color:var(--text-faint)}
   table th{position:sticky;top:0;background:var(--surface-2);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);padding:9px 10px;border-bottom:1px solid var(--border)}
+  table th.sortable{cursor:pointer;user-select:none;transition:color .12s var(--ease-out)}
+  table th.sortable:hover{color:var(--text)}
+  table th.sortable.sort-active{color:var(--accent)}
+  table th .sort-arrow{display:inline-block;margin-left:4px;font-size:9px;opacity:.9}
   table td{padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
   table tbody tr{transition:background .12s var(--ease-out)}
   table tbody tr:hover{background:var(--surface-2)}
@@ -233,7 +243,17 @@
       <div class="panel">
         <div class="panel-head">
           <h3>Trend</h3>
-          <select id="trend-metric-select"></select>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <span id="forecast-hint" class="fc-hint"></span>
+            <select id="trend-granularity-select">
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+            <select id="trend-metric-select"></select>
+            <label class="fc-toggle" id="forecast-toggle-label"><input type="checkbox" id="forecast-toggle"> Forecast</label>
+          </div>
         </div>
         <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
       </div>
@@ -242,7 +262,7 @@
     <section id="breakdown-section">
       <div class="panel">
         <div class="panel-head">
-          <h3>Breakdown &middot; best CPL first</h3>
+          <h3>Breakdown</h3>
           <select id="breakdown-dim-select">
             <option value="channelType">Channel Type</option>
             <option value="sourceMedium">Source / Medium</option>
@@ -251,14 +271,20 @@
             <option value="copy">Copy</option>
           </select>
         </div>
-        <div class="grid-2">
-          <div class="chart-wrap"><canvas id="breakdown-chart"></canvas></div>
-          <div class="table-wrap">
-            <table id="breakdown-table">
-              <thead><tr><th>#</th><th>Group</th><th class="num">Leads</th><th class="num">MQL</th><th class="num">Orders</th><th class="num">Cost</th><th class="num">CPL</th><th class="num">CPO</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
+        <div class="table-wrap expanded">
+          <table id="breakdown-table">
+            <thead><tr>
+              <th>#</th>
+              <th class="sortable" data-sort="name">Group</th>
+              <th class="num sortable" data-sort="leads">Leads</th>
+              <th class="num sortable" data-sort="mql">MQL</th>
+              <th class="num sortable" data-sort="orders">Orders</th>
+              <th class="num sortable" data-sort="cost">Cost</th>
+              <th class="num sortable" data-sort="cpl">CPL</th>
+              <th class="num sortable" data-sort="cpo">CPO</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -405,7 +431,11 @@
   var channelTypeFilter = '';
   var typeFilter = '';     // '' | Premium | Prescription | Free
   var trendMetric = 'leads';
+  var trendGranularity = 'daily'; // daily | weekly | monthly | yearly
+  var forecastOn = false; // the "Forecast" checkbox on the trend chart
   var breakdownDim = 'channelType';
+  var breakdownSort = { key: 'cpl', dir: 'asc' }; // default matches the table's old fixed "best CPL first" order
+  var BREAKDOWN_SORT_DEFAULT_DIR_ = { name:'asc', leads:'desc', mql:'desc', orders:'desc', cost:'desc', cpl:'asc', cpo:'asc' };
   var activeTab = 'overview';
   var charts = { trend: null, breakdown: null, lp: null, cp: null };
 
@@ -417,7 +447,8 @@
   var els = {};
   ['status-dot','status-text','settings-panel','endpoint-input','empty-state','error-state','error-detail',
    'content','tiles','date-filter-select','custom-range','from-y','from-m','from-d','to-y','to-m','to-d','channel-type-select','type-select','range-label',
-   'trend-metric-select','breakdown-dim-select','footer-time',
+   'trend-metric-select','trend-granularity-select','breakdown-dim-select','footer-time',
+   'forecast-toggle','forecast-toggle-label','forecast-hint',
    'lp-summary','cp-summary','brief-tiles'].forEach(function(id){
     els[id.replace(/-([a-z])/g,function(_,c){return c.toUpperCase();})] = document.getElementById(id);
   });
@@ -461,9 +492,21 @@
 
   function tfield(row, name){ return row[TARGET_IDX[name]] || 0; }
 
+  // Per-Channel-Type targets exist only for MQL and Cost ("Target MQL <Channel>" / "Target Cost
+  // <Channel>" columns) — when a specific Channel Type filter is active, prefer that channel's own
+  // target over the blended/type-split one. Takes priority over the Type (Premium/Prescription/Free)
+  // filter for these 2 metrics, since there's no combined Channel+Type target column.
+  var CHANNEL_TARGET_METRICS_ = { mql: 'mql', cost: 'cost' };
+  var CHANNEL_TARGET_SUFFIX_ = { 'Performance':'Performance', 'Organic':'Organic', 'Blog':'Blog', 'Retention':'Retention', 'eCRM':'Ecrm' };
+
   function monthlyTargetFor(metricKey, jy, jmIdx){
     var row = TARGETS_BY_KEY[jy + '|' + JMONTHS_FULL[jmIdx-1]];
     if (!row) return 0;
+    var chPrefix = CHANNEL_TARGET_METRICS_[metricKey];
+    if (channelTypeFilter && chPrefix){
+      var suffix = CHANNEL_TARGET_SUFFIX_[channelTypeFilter.trim()];
+      if (suffix) return tfield(row, chPrefix + suffix);
+    }
     if (BLENDED_ONLY_METRICS[metricKey]) return tfield(row, metricKey);
     if (metricKey === 'upsell'){
       if (typeFilter) return tfield(row, 'upsell' + typeFilter);
@@ -482,6 +525,33 @@
     var c = monthlyTargetFor('cost', jy, jmIdx);
     var den = monthlyTargetFor(denomKey, jy, jmIdx);
     return den ? c/den : 0;
+  }
+
+  // Target for an arbitrary [fromISO, toISO] date range (any length — days, weeks, months). Each
+  // touched month contributes its target prorated to how many of its days fall in the range; rate
+  // metrics (isRatio) sum the raw cost/denominator targets across months, un-prorated, since a rate
+  // target doesn't scale with elapsed days. Shared by periodTargetInfo's "custom" preset and the
+  // trend chart's forecast bucket — same math, different callers.
+  function targetForDateRange(metricKey, fromISO, toISO){
+    var isRatio = !!RATIO_DENOM[metricKey];
+    var df = dateFromISO(fromISO), dt = dateFromISO(toISO);
+    var jf = toJalaali(df.getUTCFullYear(), df.getUTCMonth()+1, df.getUTCDate());
+    var jt = toJalaali(dt.getUTCFullYear(), dt.getUTCMonth()+1, dt.getUTCDate());
+    var costSum = 0, denSum = 0, fullSum = 0;
+    var cy = jf.jy, cm = jf.jm;
+    while (cy < jt.jy || (cy === jt.jy && cm <= jt.jm)){
+      var dim = daysInJalaliMonth(cy, cm);
+      var startDay = (cy === jf.jy && cm === jf.jm) ? jf.jd : 1;
+      var endDay = (cy === jt.jy && cm === jt.jm) ? jt.jd : dim;
+      if (isRatio){
+        costSum += monthlyTargetFor('cost', cy, cm);
+        denSum += monthlyTargetFor(RATIO_DENOM[metricKey], cy, cm);
+      } else {
+        fullSum += monthlyTargetFor(metricKey, cy, cm) * (endDay-startDay+1)/dim;
+      }
+      cm++; if (cm > 12){ cm = 1; cy++; }
+    }
+    return isRatio ? (denSum ? costSum/denSum : 0) : fullSum;
   }
 
   // Target info for the CURRENT date-range preset. Mirrors the sheet's own Performance Snapshot math:
@@ -533,30 +603,9 @@
     }
     if (dateFilter === 'custom'){
       // A closed, possibly multi-month window (unlike MTD/QTD, no "pace" — it has a definite end date).
-      // Each touched month contributes its target prorated to how many of its days fall in the range;
-      // rate metrics (isRatio) sum the raw cost/denominator targets across months, un-prorated, same as
-      // QTD, since a rate target doesn't scale with elapsed days.
       var range = dateRangeFor('custom');
       if (!range) return { target: getMonthly(j.jy, j.jm), paceDenom: null };
-      var df = dateFromISO(range.from), dt = dateFromISO(range.to);
-      var jf = toJalaali(df.getUTCFullYear(), df.getUTCMonth()+1, df.getUTCDate());
-      var jt = toJalaali(dt.getUTCFullYear(), dt.getUTCMonth()+1, dt.getUTCDate());
-      var costSum3 = 0, denSum3 = 0, fullSum3 = 0;
-      var cy = jf.jy, cm = jf.jm;
-      while (cy < jt.jy || (cy === jt.jy && cm <= jt.jm)){
-        var dim4 = daysInJalaliMonth(cy, cm);
-        var startDay = (cy === jf.jy && cm === jf.jm) ? jf.jd : 1;
-        var endDay = (cy === jt.jy && cm === jt.jm) ? jt.jd : dim4;
-        if (isRatio){
-          costSum3 += monthlyTargetFor('cost', cy, cm);
-          denSum3 += monthlyTargetFor(RATIO_DENOM[metricKey], cy, cm);
-        } else {
-          fullSum3 += monthlyTargetFor(metricKey, cy, cm) * (endDay-startDay+1)/dim4;
-        }
-        cm++; if (cm > 12){ cm = 1; cy++; }
-      }
-      var full3 = isRatio ? (denSum3 ? costSum3/denSum3 : 0) : fullSum3;
-      return { target: full3, paceDenom: null };
+      return { target: targetForDateRange(metricKey, range.from, range.to), paceDenom: null };
     }
     return { target: getMonthly(j.jy, j.jm), paceDenom: null };
   }
@@ -635,6 +684,44 @@
     var days = [];
     for (var d = 1; d <= n; d++) days.push([d, d]);
     fillSelect(dSel, days, prevDay);
+  }
+
+  // ---------- Forecast (checkbox on the trend chart) ----------
+  // Weekly chart only, and only ONE future bucket: the Jalali week right after the latest data. The
+  // reference for pace is fixed — always the 14 days ending at the latest data day — so the forecast does
+  // NOT move when the date filter changes; it only changes with new data, the channel filter, or metric.
+  var FORECAST_GRANULARITIES_ = { weekly:1 };
+  var FORECAST_REFERENCE_DAYS_ = 14;
+
+  // First/last day and label of the week that follows the one containing the latest data day.
+  function nextBucket(){
+    if (!anchorISO) return null;
+    var lastKey = bucketDate(anchorISO, 'weekly').key;
+    var from = anchorISO;
+    do { from = isoAddDays(from, 1); } while (bucketDate(from, 'weekly').key === lastKey);
+    var b = bucketDate(from, 'weekly'), to = from;
+    while (bucketDate(isoAddDays(to, 1), 'weekly').key === b.key) to = isoAddDays(to, 1);
+    return { from: from, to: to, label: b.label };
+  }
+
+  // The formula: pace = actual / plan over the past two weeks (14 days ending at the latest data, honoring
+  // the channel filter but NOT the date filter); forecast = next week's own plan x that pace. Returns a
+  // reason instead of a made-up number when a plan is missing.
+  function computeForecast(metricKey){
+    var range = dateRangeFor(dateFilter);
+    if (!range || range.to !== anchorISO) return { ok:false, reason:'Forecast needs a range that ends at the latest data' };
+    var nb = nextBucket();
+    var refFrom = isoAddDays(anchorISO, -(FORECAST_REFERENCE_DAYS_ - 1));
+    var refPlanned = targetForDateRange(metricKey, refFrom, anchorISO);
+    if (!refPlanned) return { ok:false, reason:'No plan for the past two weeks' };
+    var refRows = RAW.rows.filter(function(row){
+      var d = field(row,'date');
+      return d >= refFrom && d <= anchorISO && (!channelTypeFilter || field(row,'channelType') === channelTypeFilter);
+    });
+    var pace = computeTotals(refRows)[metricKey] / refPlanned;
+    var planned = targetForDateRange(metricKey, nb.from, nb.to);
+    if (!planned) return { ok:false, reason:'No plan for ' + nb.label };
+    return { ok:true, bucket: nb, pace: pace, planned: planned, forecast: planned * pace };
   }
 
   function readJalaliDate(prefix){
@@ -799,7 +886,7 @@
       if (info && info.target > 0){
         var attain = actual / info.target;
         var variance = attain - 1;
-        html += '<div class="target-line">Target '+fmtNum(info.target)+'</div>';
+        html += '<div class="target-line">'+(k==='cost'?'Budget':'Target')+' '+fmtNum(info.target)+'</div>';
         html += '<div class="stat-chips">' + statChip('Attain', attain, LOWER_BETTER[k]);
         if (isOpenPeriod[dateFilter] && info.paceDenom){
           html += statChip('Pace', actual/info.paceDenom, LOWER_BETTER[k]);
@@ -815,56 +902,127 @@
     animateTileEntrance(els.tiles);
   }
 
+  // Buckets a date into a daily/weekly/monthly/yearly key+label. Weekly reuses the same Jalali
+  // week convention used everywhere else in this system (weeks 1-4 = days 1-7/8-14/15-21/22-28,
+  // week 5 = the tail of the month) — weeks never span a month boundary, which keeps target
+  // proration simple (each bucket belongs to exactly one month's target).
+  function bucketDate(iso, granularity){
+    var d = dateFromISO(iso);
+    var j = toJalaali(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate());
+    if (granularity === 'weekly'){
+      var week = j.jd<=7?1:j.jd<=14?2:j.jd<=21?3:j.jd<=28?4:5;
+      return { type:'weekly', key: j.jy+'-'+j.jm+'-W'+week, label: JMONTHS[j.jm-1]+' W'+week, jy:j.jy, jm:j.jm, week:week };
+    }
+    if (granularity === 'monthly') return { type:'monthly', key: j.jy+'-'+j.jm, label: JMONTHS[j.jm-1]+' '+j.jy, jy:j.jy, jm:j.jm };
+    if (granularity === 'yearly') return { type:'yearly', key: String(j.jy), label: String(j.jy), jy:j.jy };
+    return { type:'daily', key: iso, label: jalaaliLabel(iso), jy:j.jy, jm:j.jm, jd:j.jd };
+  }
+
+  // Per-bucket target: daily/weekly get the month's target prorated to that bucket's day-count
+  // (ratio metrics never prorate — same convention as periodTargetInfo); monthly gets the full
+  // month target as-is; yearly sums (or, for ratios, re-derives from summed cost/denominator)
+  // across all 12 months.
+  function bucketTargetFor(bucket, metricKey, isRatio){
+    if (bucket.type === 'yearly'){
+      if (isRatio){
+        var cs=0, ds=0;
+        for (var m=1;m<=12;m++){ cs+=monthlyTargetFor('cost',bucket.jy,m); ds+=monthlyTargetFor(RATIO_DENOM[metricKey],bucket.jy,m); }
+        return ds ? cs/ds : 0;
+      }
+      var s=0; for (var m2=1;m2<=12;m2++) s+=monthlyTargetFor(metricKey,bucket.jy,m2);
+      return s;
+    }
+    if (bucket.type === 'monthly'){
+      return isRatio ? monthlyRatioTarget(metricKey, bucket.jy, bucket.jm) : monthlyTargetFor(metricKey, bucket.jy, bucket.jm);
+    }
+    if (isRatio) return monthlyRatioTarget(metricKey, bucket.jy, bucket.jm);
+    var dim = daysInJalaliMonth(bucket.jy, bucket.jm);
+    var daysInBucket = bucket.type === 'weekly' ? (bucket.week === 5 ? (dim-28) : 7) : 1;
+    return monthlyTargetFor(metricKey, bucket.jy, bucket.jm) * daysInBucket / dim;
+  }
+
   function renderTrend(rows){
     var range = dateRangeFor(dateFilter);
     if (!range) return;
-    var byDay = {};
+    var isRatioMetric = trendMetric==='cpl'||trendMetric==='cpo'||trendMetric==='cpmql';
+    var buckets = {}, order = [];
     var cur = range.from;
-    while (cur <= range.to){ byDay[cur] = 0; cur = isoAddDays(cur,1); }
-    var cost = {}, count = {};
+    while (cur <= range.to){
+      var b0 = bucketDate(cur, trendGranularity);
+      if (!buckets[b0.key]){ buckets[b0.key] = { label:b0.label, jy:b0.jy, jm:b0.jm, jd:b0.jd, week:b0.week, type:b0.type, value:0, cost:0, count:0 }; order.push(b0.key); }
+      cur = isoAddDays(cur,1);
+    }
     rows.forEach(function(row){
       var d = field(row,'date');
-      if (!(d in byDay)) return;
-      if (trendMetric === 'cpl' || trendMetric === 'cpo' || trendMetric === 'cpmql'){
-        cost[d] = (cost[d]||0) + metricValue(row,'cost');
+      var b = bucketDate(d, trendGranularity);
+      var bucket = buckets[b.key];
+      if (!bucket) return; // outside the selected range
+      if (isRatioMetric){
+        bucket.cost += metricValue(row,'cost');
         var denom = trendMetric==='cpl' ? 'leads' : (trendMetric==='cpo' ? 'orders' : 'mql');
-        count[d] = (count[d]||0) + metricValue(row,denom);
+        bucket.count += metricValue(row,denom);
       } else if (['impressions','clicks','sessions'].indexOf(trendMetric) !== -1){
-        byDay[d] += field(row,trendMetric)||0;
+        bucket.value += field(row,trendMetric)||0;
       } else {
-        byDay[d] += metricValue(row,trendMetric);
+        bucket.value += metricValue(row,trendMetric);
       }
     });
-    var labels = [], values = [];
-    Object.keys(byDay).sort().forEach(function(d){
-      labels.push(jalaaliLabel(d));
-      if (trendMetric==='cpl'||trendMetric==='cpo'||trendMetric==='cpmql'){
-        values.push(count[d] ? Math.round((cost[d]||0)/count[d]) : 0);
-      } else {
-        values.push(byDay[d]);
-      }
+    var labels = [], values = [], targetValues = [];
+    var isTargetable = !!TARGETABLE_METRICS[trendMetric];
+    order.forEach(function(key){
+      var b = buckets[key];
+      labels.push(b.label);
+      values.push(isRatioMetric ? (b.count ? Math.round(b.cost/b.count) : 0) : b.value);
+      if (isTargetable) targetValues.push(bucketTargetFor(b, trendMetric, isRatioMetric));
     });
+    // Forecast (checkbox, top right of the chart): ONE extra bucket after the real ones — the next week. Actual/Target stay null there (Chart.js breaks the line on
+    // null) and a separate "Forecast" dataset holds the single point. The checkbox is only available for
+    // metrics that have a plan, on the Weekly chart; when it's on but there's nothing to forecast from (no
+    // plan entered), the reason is shown next to it instead of silently drawing nothing.
+    var forecastValues = null;
+    var canForecast = !!TARGETABLE_METRICS[trendMetric] && !!FORECAST_GRANULARITIES_[trendGranularity];
+    els.forecastToggle.disabled = !canForecast;
+    els.forecastToggleLabel.classList.toggle('disabled', !canForecast);
+    els.forecastToggleLabel.title = canForecast ? '' : 'Forecast is available on the Weekly chart, for metrics that have a plan (target)';
+    els.forecastHint.textContent = '';
+    if (forecastOn && canForecast){
+      var fc = computeForecast(trendMetric);
+      if (fc.ok){
+        labels.push(fc.bucket.label);
+        values.push(null);
+        targetValues.push(null);
+        forecastValues = labels.map(function(){ return null; });
+        forecastValues[forecastValues.length-1] = fc.forecast;
+        els.forecastHint.textContent = 'Pace over the past 2 weeks: ' + Math.round(fc.pace*100) + '%';
+      } else {
+        els.forecastHint.textContent = fc.reason;
+      }
+    }
     var ctx = document.getElementById('trend-chart');
     var textColor = getComputedStyle(document.body).getPropertyValue('--text-dim').trim();
     var labelColor = getComputedStyle(document.body).getPropertyValue('--text').trim();
     var gridColor = getComputedStyle(document.body).getPropertyValue('--border').trim();
     var accent = getComputedStyle(document.body).getPropertyValue('--accent').trim();
     var faint = getComputedStyle(document.body).getPropertyValue('--text-faint').trim();
-    var fmtLabel = (trendMetric==='cpl'||trendMetric==='cpo'||trendMetric==='cpmql') ? fmtRatio : fmtNum;
-    // Data labels on every point get unreadable past ~20 points (Last 30 days / Quarter to date) —
-    // same threshold the chart already uses to hide individual point markers.
-    var showLabels = labels.length <= 20;
-    // Target reference line: a rate metric's target is a constant rate (not prorated by day), everything
-    // else gets the period target spread evenly across the visible days as a flat "pace" benchmark.
-    var isRatioMetric = trendMetric==='cpl'||trendMetric==='cpo'||trendMetric==='cpmql';
-    var info = TARGETABLE_METRICS[trendMetric] ? periodTargetInfo(trendMetric) : null;
-    var targetPerDay = (info && info.target) ? (isRatioMetric ? info.target : info.target/labels.length) : null;
+    var warn = getComputedStyle(document.body).getPropertyValue('--warn').trim();
+    var fmtLabel = isRatioMetric ? fmtRatio : fmtNum;
+    // A 1-2 point range (e.g. "Last day with data") renders as a near-invisible dot at the default
+    // radius — size points up so a sparse range is still clearly visible, not just technically present.
+    // Markers fade out only past a genuinely dense range (60+ points, e.g. daily-granularity QTD).
+    var pointRadius = labels.length<=2 ? 7 : (labels.length>60 ? 0 : 2);
+    var showLabels = labels.length <= 60; // just controls top padding headroom below
+    var hasTarget = targetValues.some(function(v){ return v!=null && v>0; });
     var datasets = [{ label:'Actual', data: values, borderColor: accent, backgroundColor: accent+'33',
-      fill: true, tension: .3, pointRadius: labels.length>20?0:3 }];
-    if (targetPerDay){
-      datasets.push({ label:'Target', data: labels.map(function(){ return targetPerDay; }),
-        borderColor: faint, borderDash:[5,4], borderWidth:1.5, pointRadius:0, fill:false, tension:0,
+      fill: true, tension: .3, pointRadius: pointRadius }];
+    if (hasTarget){
+      datasets.push({ label: trendMetric==='cost'?'Budget':'Target', data: targetValues,
+        borderColor: faint, borderDash:[5,4], borderWidth:1.5, pointRadius: labels.length<=2?5:0, fill:false, tension:0,
         datalabels:{ display:false } });
+    }
+    if (forecastValues){
+      datasets.push({ label:'Forecast', data: forecastValues,
+        borderColor: warn, backgroundColor: warn, pointRadius:7, pointStyle:'rectRot', showLine:false,
+        datalabels:{ display:true, color: warn } });
     }
     if (charts.trend) charts.trend.destroy();
     charts.trend = new Chart(ctx, {
@@ -872,12 +1030,12 @@
       data: { labels: labels, datasets: datasets },
       options: { responsive:true, maintainAspectRatio:false,
         layout:{ padding:{ top: showLabels ? 20 : 6 } },
-        plugins:{ legend:{ display: !!targetPerDay, position:'top', align:'end',
+        plugins:{ legend:{ display: hasTarget || !!forecastValues, position:'top', align:'end',
             labels:{ color:textColor, boxWidth:14, boxHeight:2, padding:12,
               font:{ family:"'Public Sans', sans-serif", size:10.5 } } },
-          datalabels:{ display: showLabels, color: labelColor, anchor:'end', align:'top', offset:6,
+          datalabels:{ display: 'auto', color: labelColor, anchor:'end', align:'top', offset:6,
             font:{ family: "'IBM Plex Mono', monospace", size: 10, weight: '600' },
-            formatter: function(v){ return fmtLabel(v); } } },
+            formatter: function(v){ return v==null?'':fmtLabel(v); } } },
         scales:{ x:{ ticks:{ color:textColor, maxRotation:0, autoSkip:true }, grid:{ display:false } },
                  y:{ ticks:{ color:textColor }, grid:{ color:gridColor }, beginAtZero:true } } }
     });
@@ -943,8 +1101,38 @@
     });
   }
 
+  // Sorts a copy of the group list by breakdownSort.key/dir — 'name' compares case-insensitively,
+  // everything else numerically. Reused as-is regardless of which column was clicked.
+  function sortBreakdownList(list){
+    var key = breakdownSort.key, dir = breakdownSort.dir, mul = dir === 'asc' ? 1 : -1;
+    var sorted = list.slice();
+    sorted.sort(function(a,b){
+      if (key === 'name'){
+        var an = (a.name||'').toLowerCase(), bn = (b.name||'').toLowerCase();
+        return mul * (an<bn?-1:(an>bn?1:0));
+      }
+      return mul * (a[key] - b[key]);
+    });
+    return sorted;
+  }
+
+  function updateBreakdownHeaderIndicators(){
+    document.querySelectorAll('#breakdown-table th.sortable').forEach(function(th){
+      var active = th.dataset.sort === breakdownSort.key;
+      th.classList.toggle('sort-active', active);
+      var arrow = th.querySelector('.sort-arrow');
+      if (arrow) arrow.remove();
+      if (active){
+        var span = document.createElement('span');
+        span.className = 'sort-arrow';
+        span.textContent = breakdownSort.dir === 'asc' ? '▲' : '▼';
+        th.appendChild(span);
+      }
+    });
+  }
+
   function renderBreakdown(rows){
-    var list = computeGroupStats(rows, function(row){ return groupKey(row, breakdownDim); });
+    var list = sortBreakdownList(computeGroupStats(rows, function(row){ return groupKey(row, breakdownDim); }));
     var tbody = document.querySelector('#breakdown-table tbody');
     tbody.innerHTML = '';
     list.forEach(function(g, i){
@@ -956,9 +1144,7 @@
         '<td class="num">'+fmtRatio(g.cpl)+'</td><td class="num">'+fmtRatio(g.cpo)+'</td>';
       tbody.appendChild(tr);
     });
-
-    var top = list.filter(function(g){return g.leads>0;}).slice(0,12);
-    drawBarChart('breakdown-chart', top.map(function(g){return g.name;}), top.map(function(g){return g.cpl;}), 'breakdown');
+    updateBreakdownHeaderIndicators();
   }
 
   function fmtPct(n){ return isFinite(n) ? Math.round(n*1000)/10 + '%' : '—'; }
@@ -1059,7 +1245,7 @@
         if (info && info.target > 0){
           var attain = spec.value / info.target;
           var variance = attain - 1;
-          html += '<div class="target-line">Target '+fmtNum(info.target)+'</div>';
+          html += '<div class="target-line">'+(spec.targetKey==='cost'?'Budget':'Target')+' '+fmtNum(info.target)+'</div>';
           html += '<div class="stat-chips">' + statChip('Attain', attain, LOWER_BETTER[spec.targetKey]);
           if (isOpenPeriod[dateFilter] && info.paceDenom){
             html += statChip('Pace', spec.value/info.paceDenom, LOWER_BETTER[spec.targetKey]);
@@ -1183,7 +1369,17 @@
   els.channelTypeSelect.addEventListener('change', function(){ channelTypeFilter = els.channelTypeSelect.value; renderAll(); });
   els.typeSelect.addEventListener('change', function(){ typeFilter = els.typeSelect.value; renderAll(); });
   els.trendMetricSelect.addEventListener('change', function(){ trendMetric = els.trendMetricSelect.value; renderTrend(filteredRows()); });
+  els.trendGranularitySelect.addEventListener('change', function(){ trendGranularity = els.trendGranularitySelect.value; renderTrend(filteredRows()); });
+  els.forecastToggle.addEventListener('change', function(){ forecastOn = els.forecastToggle.checked; renderTrend(filteredRows()); });
   els.breakdownDimSelect.addEventListener('change', function(){ breakdownDim = els.breakdownDimSelect.value; renderBreakdown(filteredRows()); });
+  document.querySelectorAll('#breakdown-table th.sortable').forEach(function(th){
+    th.addEventListener('click', function(){
+      var key = th.dataset.sort;
+      if (breakdownSort.key === key) breakdownSort.dir = breakdownSort.dir === 'asc' ? 'desc' : 'asc';
+      else breakdownSort = { key: key, dir: BREAKDOWN_SORT_DEFAULT_DIR_[key] || 'asc' };
+      renderBreakdown(filteredRows());
+    });
+  });
   els.dateFilterSelect.addEventListener('change', function(){ dateFilter = els.dateFilterSelect.value; renderAll(); });
   ['fromY','fromM','fromD'].forEach(function(k){ els[k].addEventListener('change', function(){ onCustomDateChange('from'); }); });
   ['toY','toM','toD'].forEach(function(k){ els[k].addEventListener('change', function(){ onCustomDateChange('to'); }); });
