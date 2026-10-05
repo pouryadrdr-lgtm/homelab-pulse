@@ -220,7 +220,8 @@
       <option value="">Type: All</option>
       <option value="Premium">Type: Premium</option>
       <option value="Prescription">Type: Prescription</option>
-      <option value="Free">Type: Free</option>
+      <option value="Free">Type: Non-insurance</option>
+      <option value="Communication">Type: Communication</option>
     </select>
     <span id="range-label"></span>
   </div>
@@ -281,6 +282,7 @@
               <th class="num sortable" data-sort="orders">Orders</th>
               <th class="num sortable" data-sort="cost">Cost</th>
               <th class="num sortable" data-sort="cpl">CPL</th>
+              <th class="num sortable" data-sort="cpmql">CPMQL</th>
               <th class="num sortable" data-sort="cpo">CPO</th>
             </tr></thead>
             <tbody></tbody>
@@ -429,13 +431,13 @@
   var dateFilter = 'last7'; // lastday | last7 | last30 | mtd | qtd | custom
   var customFrom = null, customTo = null; // ISO strings, only used when dateFilter === 'custom'
   var channelTypeFilter = '';
-  var typeFilter = '';     // '' | Premium | Prescription | Free
+  var typeFilter = '';     // '' | Premium | Prescription | Free (shown as "Non-insurance") | Communication
   var trendMetric = 'leads';
   var trendGranularity = 'daily'; // daily | weekly | monthly | yearly
   var forecastOn = false; // the "Forecast" checkbox on the trend chart
   var breakdownDim = 'channelType';
   var breakdownSort = { key: 'cpl', dir: 'asc' }; // default matches the table's old fixed "best CPL first" order
-  var BREAKDOWN_SORT_DEFAULT_DIR_ = { name:'asc', leads:'desc', mql:'desc', orders:'desc', cost:'desc', cpl:'asc', cpo:'asc' };
+  var BREAKDOWN_SORT_DEFAULT_DIR_ = { name:'asc', leads:'desc', mql:'desc', orders:'desc', cost:'desc', cpl:'asc', cpmql:'asc', cpo:'asc' };
   var activeTab = 'overview';
   var charts = { trend: null, breakdown: null, lp: null, cp: null };
 
@@ -481,9 +483,61 @@
     cost: { Premium:'costPremium', Prescription:'costPrescription', Free:'costFree' },
     upsell: { Premium:'upsellPremium', Prescription:'upsellPrescription', Free:'upsellFree' }
   };
+  // The Campaign column says what a campaign is: Premium / Prescription / Free (= Non-insurance — the sheet's
+  // own formulas accept "Free" and "No-insurance") / Communication (spelled "comminucation" in the sheet today,
+  // so anything starting with "comm" counts). Blank or anything else = '' (no intent known).
+  var INTENT_TYPES = ['Premium','Prescription','Free'];
+  var TYPE_LABELS = { Premium:'Premium', Prescription:'Prescription', Free:'Non-insurance', Communication:'Communication' };
+  function campaignClass(row){
+    var c = String(field(row,'campaign') || '').trim().toLowerCase();
+    if (c === 'premium') return 'Premium';
+    if (c === 'prescription') return 'Prescription';
+    if (c === 'free' || c === 'non insurance' || c === 'non-insurance' || c === 'noninsurance' || c === 'no-insurance' || c === 'no insurance') return 'Free';
+    if (c.indexOf('comm') === 0) return 'Communication';
+    return '';
+  }
+  // Premium / Prescription / Non-insurance views split every metric by the MQL's intent. Communication
+  // campaigns carry no intent, so they are left out of those three views and get their own view.
+  function inTypeView(){ return !!typeFilter && typeFilter !== 'Communication'; }
+  function rowInTypeFilter(row){
+    if (!typeFilter) return true;
+    var isComm = campaignClass(row) === 'Communication';
+    return typeFilter === 'Communication' ? isComm : !isComm;
+  }
+
   function metricValue(row, name){
-    if (typeFilter && TYPE_FIELD_MAP[name]) return field(row, TYPE_FIELD_MAP[name][typeFilter]) || 0;
+    if (inTypeView() && TYPE_FIELD_MAP[name]){
+      var v = field(row, TYPE_FIELD_MAP[name][typeFilter]) || 0;
+      // Cost has no per-type columns in practice: a campaign's spend belongs to ITS type (same rule as the
+      // sheet's "Cost (filtered)" column) — a Premium campaign's cost shows under Premium only.
+      if (name === 'cost' && !v && campaignClass(row) === typeFilter) return field(row, 'cost') || 0;
+      return v;
+    }
     return field(row, name) || 0;
+  }
+
+  // Direct / Indirect / Communication MQL. Direct = the campaign's type equals the MQL's type (a Premium
+  // campaign's Premium MQL); Indirect = the MQL is a different type from the campaign (or the campaign has no
+  // type). An MQL counts under its OWN type, so the Premium view's Total = Direct + Indirect. Communication
+  // campaigns are one lump (no intent): they only appear in All and in the Communication view.
+  // A positive gap between a row's MQL and its type columns (MQL entered without the split) goes to Indirect
+  // in the All view so nothing silently drops out of the total.
+  function computeMqlSplit(rows){
+    var s = { direct:0, indirect:0, comm:0, total:0 };
+    rows.forEach(function(row){
+      var cls = campaignClass(row);
+      if (cls === 'Communication'){ s.comm += field(row,'mql') || 0; return; }
+      var typeSum = 0;
+      INTENT_TYPES.forEach(function(t){
+        var v = field(row, TYPE_FIELD_MAP.mql[t]) || 0;
+        typeSum += v;
+        if (typeFilter && typeFilter !== t) return;
+        if (cls === t) s.direct += v; else s.indirect += v;
+      });
+      if (!typeFilter){ var gap = (field(row,'mql') || 0) - typeSum; if (gap > 0) s.indirect += gap; }
+    });
+    s.total = s.direct + s.indirect + s.comm;
+    return s;
   }
 
   // ---------- Target lookup (Targets tab: one row per Jalali Year+Month) ----------
@@ -502,6 +556,7 @@
   function monthlyTargetFor(metricKey, jy, jmIdx){
     var row = TARGETS_BY_KEY[jy + '|' + JMONTHS_FULL[jmIdx-1]];
     if (!row) return 0;
+    if (typeFilter === 'Communication') return 0; // the plan has no Communication line
     var chPrefix = CHANNEL_TARGET_METRICS_[metricKey];
     if (channelTypeFilter && chPrefix){
       var suffix = CHANNEL_TARGET_SUFFIX_[channelTypeFilter.trim()];
@@ -699,6 +754,7 @@
       var d = field(row,'date');
       if (d < range.from || d > range.to) return false;
       if (channelTypeFilter && field(row,'channelType') !== channelTypeFilter) return false;
+      if (!rowInTypeFilter(row)) return false;
       return true;
     });
   }
@@ -815,6 +871,9 @@
       t.sms += field(row,'sms')||0;
       TYPED_METRICS.forEach(function(m){ t[m] += metricValue(row,m); });
     });
+    var split = computeMqlSplit(rows);
+    t.mqlDirect = split.direct; t.mqlIndirect = split.indirect; t.mqlComm = split.comm;
+    if (!typeFilter || typeFilter === 'Communication') t.mql = split.total; // the parts always add up to the total
     t.cpl = t.leads ? t.cost/t.leads : 0;
     t.cpo = t.orders ? t.cost/t.orders : 0;
     t.cpmql = t.mql ? t.cost/t.mql : 0;
@@ -823,17 +882,27 @@
 
   var TARGETABLE_METRICS = { cost:1, impressions:1, clicks:1, sessions:1, leads:1, inzone:1, mql:1, orders:1, upsell:1, sms:1, cpl:1, cpo:1, cpmql:1 };
 
+  // Direct / Indirect / Communication MQL are not plain metrics: they have no plan of their own (the MQL
+  // plan applies to Total MQL). In the Communication view there is no direct/indirect, just "MQL".
+  var MQL_PART_LABELS = { mqlDirect:'Direct MQL', mqlIndirect:'Indirect MQL', mqlComm:'Communication MQL' };
+  function tileLabel(k){
+    if (MQL_PART_LABELS[k]) return MQL_PART_LABELS[k];
+    if (k === 'mql' && typeFilter !== 'Communication') return 'Total MQL';
+    return METRIC_LABELS[k];
+  }
+
   function renderTiles(rows){
     var t = computeTotals(rows);
-    var order = ['cost','impressions','clicks','sessions','leads','inzone','mql','orders','upsell','sms','cpl','cpo','cpmql'];
+    var order = ['cost','impressions','clicks','sessions','leads','inzone','mqlDirect','mqlIndirect','mqlComm','mql','orders','upsell','sms','cpl','cpo','cpmql'];
     els.tiles.innerHTML = '';
     order.forEach(function(k){
       var actual = t[k];
       if (!actual) return; // hide tiles with no data for the current filter — keeps the grid focused
+      if (k === 'mqlComm' && typeFilter) return; // Communication has its own view; the type views exclude it
       var isDerived = (k==='cpl'||k==='cpo'||k==='cpmql');
       var tile = document.createElement('div');
       tile.className = 'tile' + (isDerived ? ' derived' : '');
-      var html = '<div class="label">'+METRIC_LABELS[k]+'</div>'+
+      var html = '<div class="label">'+tileLabel(k)+'</div>'+
         '<div class="value tabular"></div>';
 
       var info = TARGETABLE_METRICS[k] ? periodTargetInfo(k) : null;
@@ -1022,6 +1091,7 @@
       var g = groups[k];
       g.name = k;
       g.cpl = g.leads ? g.cost/g.leads : 0;
+      g.cpmql = g.mql ? g.cost/g.mql : 0;
       g.cpo = g.orders ? g.cost/g.orders : 0;
       g.sessLead = g.sessions ? g.leads/g.sessions : 0;
       g.mqlOrder = g.mql ? g.orders/g.mql : 0;
@@ -1092,7 +1162,7 @@
       tr.innerHTML = '<td class="rank">'+(i+1)+'</td><td>'+escapeHtml(g.name)+'</td>'+
         '<td class="num">'+fmtNum(g.leads)+'</td><td class="num">'+fmtNum(g.mql)+'</td>'+
         '<td class="num">'+fmtNum(g.orders)+'</td><td class="num">'+fmtNum(g.cost)+'</td>'+
-        '<td class="num">'+fmtRatio(g.cpl)+'</td><td class="num">'+fmtRatio(g.cpo)+'</td>';
+        '<td class="num">'+fmtRatio(g.cpl)+'</td><td class="num">'+fmtRatio(g.cpmql)+'</td><td class="num">'+fmtRatio(g.cpo)+'</td>';
       tbody.appendChild(tr);
     });
     updateBreakdownHeaderIndicators();
@@ -1152,32 +1222,17 @@
     drawBarChart('cp-chart', top.map(function(g){return g.name;}), top.map(function(g){return g.cpl;}), 'cp');
   }
 
-  // Direct MQL: campaign name equals the type being counted (Total Lead view sums Direct across all
-  // 3 types). Indirect = Total - Direct. Same convention as the sheet's Type Performance tab, adapted
-  // from Lead to MQL. No campaign-alias handling here (unlike Cost) — matches the sheet's own formula.
-  function computeDirectIndirectMQL(rows){
-    var types = typeFilter ? [typeFilter] : ['Premium','Prescription','Free'];
-    var direct = 0;
-    rows.forEach(function(row){
-      var camp = (field(row,'campaign')||'').toLowerCase();
-      types.forEach(function(t){
-        if (camp === t.toLowerCase()) direct += field(row, TYPE_FIELD_MAP.mql[t]) || 0;
-      });
-    });
-    var total = 0;
-    rows.forEach(function(row){ total += metricValue(row,'mql'); });
-    return { direct: direct, indirect: total - direct, total: total };
-  }
-
   function renderBriefTab(rows){
-    var mqlSplit = computeDirectIndirectMQL(rows);
+    var mqlSplit = computeMqlSplit(rows);
     var t = computeTotals(rows);
     var cpmql = mqlSplit.total ? t.cost / mqlSplit.total : 0;
+    var isComm = typeFilter === 'Communication';
 
     var tiles = [
-      { key:'directMql', label:'Direct MQL', value: mqlSplit.direct, targetKey:'mql' },
+      { key:'directMql', label:'Direct MQL', value: mqlSplit.direct, targetKey:null },
       { key:'indirectMql', label:'Indirect MQL', value: mqlSplit.indirect, targetKey:null },
-      { key:'totalMql', label:'Total MQL', value: mqlSplit.total, targetKey:null },
+      { key:'commMql', label:'Communication MQL', value: typeFilter ? 0 : mqlSplit.comm, targetKey:null },
+      { key:'totalMql', label: isComm ? 'MQL' : 'Total MQL', value: mqlSplit.total, targetKey:'mql' },
       { key:'orders', label:'Orders', value: t.orders, targetKey:'orders' },
       { key:'cost', label:'Cost (IRR)', value: t.cost, targetKey:'cost' },
       { key:'cpmql', label:'CPMQL', value: cpmql, targetKey:'cpmql', actualOverride: cpmql }
