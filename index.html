@@ -529,8 +529,8 @@
 
   // Target for an arbitrary [fromISO, toISO] date range (any length — days, weeks, months). Each
   // touched month contributes its target prorated to how many of its days fall in the range; rate
-  // metrics (isRatio) sum the raw cost/denominator targets across months, un-prorated, since a rate
-  // target doesn't scale with elapsed days. Shared by periodTargetInfo's "custom" preset and the
+  // metrics (isRatio) re-derive the rate from the day-weighted cost and denominator plans, so a window that
+  // spans two months blends them by days (inside one month it is just that month's rate). Shared by periodTargetInfo's "custom" preset and the
   // trend chart's forecast bucket — same math, different callers.
   function targetForDateRange(metricKey, fromISO, toISO){
     var isRatio = !!RATIO_DENOM[metricKey];
@@ -543,71 +543,26 @@
       var dim = daysInJalaliMonth(cy, cm);
       var startDay = (cy === jf.jy && cm === jf.jm) ? jf.jd : 1;
       var endDay = (cy === jt.jy && cm === jt.jm) ? jt.jd : dim;
+      var frac = (endDay-startDay+1)/dim;
       if (isRatio){
-        costSum += monthlyTargetFor('cost', cy, cm);
-        denSum += monthlyTargetFor(RATIO_DENOM[metricKey], cy, cm);
+        costSum += monthlyTargetFor('cost', cy, cm) * frac;
+        denSum += monthlyTargetFor(RATIO_DENOM[metricKey], cy, cm) * frac;
       } else {
-        fullSum += monthlyTargetFor(metricKey, cy, cm) * (endDay-startDay+1)/dim;
+        fullSum += monthlyTargetFor(metricKey, cy, cm) * frac;
       }
       cm++; if (cm > 12){ cm = 1; cy++; }
     }
     return isRatio ? (denSum ? costSum/denSum : 0) : fullSum;
   }
 
-  // Target info for the CURRENT date-range preset. Mirrors the sheet's own Performance Snapshot math:
-  // closed windows (last day/7d/30d) get a target prorated to that many days of the anchor month;
-  // open windows (MTD/QTD) get the FULL period target plus a separate "pace" denominator prorated to
-  // elapsed days, so pace measures "will I hit the full target at this rate" (a rate metric's pace
-  // just equals its attainment, since rates don't accrue with elapsed time).
+  // Target for the CURRENT date filter: the plan for exactly the days in the selected window, summed across
+  // whichever months it touches (MTD = the days elapsed so far, not the whole month; Last 7/30 days crossing a
+  // month boundary use both months' plans). Tiles compare actuals against THIS, so Attainment is
+  // like-for-like with the dates being viewed.
   function periodTargetInfo(metricKey){
-    if (!anchorISO) return null;
-    var d = dateFromISO(anchorISO);
-    var j = toJalaali(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate());
-    var isRatio = !!RATIO_DENOM[metricKey];
-    var getMonthly = isRatio
-      ? function(jy,jmIdx){ return monthlyRatioTarget(metricKey, jy, jmIdx); }
-      : function(jy,jmIdx){ return monthlyTargetFor(metricKey, jy, jmIdx); };
-
-    if (dateFilter === 'lastday' || dateFilter === 'last7' || dateFilter === 'last30'){
-      var n = dateFilter === 'lastday' ? 1 : (dateFilter === 'last7' ? 7 : 30);
-      var dim = daysInJalaliMonth(j.jy, j.jm);
-      var mTarget = getMonthly(j.jy, j.jm);
-      var target = isRatio ? mTarget : (mTarget/dim*n);
-      return { target: target, paceDenom: null };
-    }
-    if (dateFilter === 'mtd'){
-      var full = getMonthly(j.jy, j.jm);
-      var dim2 = daysInJalaliMonth(j.jy, j.jm);
-      var paceDenom = isRatio ? full : full*j.jd/dim2;
-      return { target: full, paceDenom: paceDenom };
-    }
-    if (dateFilter === 'qtd'){
-      var q = Math.floor((j.jm-1)/3), startMonth = q*3+1;
-      var months = [startMonth, startMonth+1, startMonth+2];
-      var totalDays = 0, elapsedDays = 0, costSum = 0, denSum = 0, fullSum = 0;
-      months.forEach(function(mm){
-        var dim3 = daysInJalaliMonth(j.jy, mm);
-        totalDays += dim3;
-        if (mm < j.jm) elapsedDays += dim3;
-        if (isRatio){
-          costSum += monthlyTargetFor('cost', j.jy, mm);
-          denSum += monthlyTargetFor(RATIO_DENOM[metricKey], j.jy, mm);
-        } else {
-          fullSum += monthlyTargetFor(metricKey, j.jy, mm);
-        }
-      });
-      elapsedDays += j.jd;
-      var full2 = isRatio ? (denSum ? costSum/denSum : 0) : fullSum;
-      var paceDenom2 = isRatio ? full2 : full2*elapsedDays/totalDays;
-      return { target: full2, paceDenom: paceDenom2 };
-    }
-    if (dateFilter === 'custom'){
-      // A closed, possibly multi-month window (unlike MTD/QTD, no "pace" — it has a definite end date).
-      var range = dateRangeFor('custom');
-      if (!range) return { target: getMonthly(j.jy, j.jm), paceDenom: null };
-      return { target: targetForDateRange(metricKey, range.from, range.to), paceDenom: null };
-    }
-    return { target: getMonthly(j.jy, j.jm), paceDenom: null };
+    var range = dateRangeFor(dateFilter);
+    if (!range) return null;
+    return { target: targetForDateRange(metricKey, range.from, range.to) };
   }
 
   var LOWER_BETTER = { cost:1, cpl:1, cpmql:1, cpo:1 };
@@ -867,7 +822,6 @@
   }
 
   var TARGETABLE_METRICS = { cost:1, impressions:1, clicks:1, sessions:1, leads:1, inzone:1, mql:1, orders:1, upsell:1, sms:1, cpl:1, cpo:1, cpmql:1 };
-  var isOpenPeriod = { mtd:1, qtd:1 };
 
   function renderTiles(rows){
     var t = computeTotals(rows);
@@ -888,9 +842,6 @@
         var variance = attain - 1;
         html += '<div class="target-line">'+(k==='cost'?'Budget':'Target')+' '+fmtNum(info.target)+'</div>';
         html += '<div class="stat-chips">' + statChip('Attain', attain, LOWER_BETTER[k]);
-        if (isOpenPeriod[dateFilter] && info.paceDenom){
-          html += statChip('Pace', actual/info.paceDenom, LOWER_BETTER[k]);
-        }
         html += '<span class="stat-chip neutral">Var '+(variance>=0?'+':'')+Math.round(variance*100)+'%</span></div>';
       } else {
         html += '<div class="target-line">No target set</div>';
@@ -1247,9 +1198,6 @@
           var variance = attain - 1;
           html += '<div class="target-line">'+(spec.targetKey==='cost'?'Budget':'Target')+' '+fmtNum(info.target)+'</div>';
           html += '<div class="stat-chips">' + statChip('Attain', attain, LOWER_BETTER[spec.targetKey]);
-          if (isOpenPeriod[dateFilter] && info.paceDenom){
-            html += statChip('Pace', spec.value/info.paceDenom, LOWER_BETTER[spec.targetKey]);
-          }
           html += '<span class="stat-chip neutral">Var '+(variance>=0?'+':'')+Math.round(variance*100)+'%</span></div>';
         } else {
           html += '<div class="target-line">No target set</div>';
