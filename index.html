@@ -443,7 +443,7 @@
 
   var TYPED_METRICS = ['leads','inzone','mql','orders','cost','upsell'];
   var METRIC_LABELS = { cost:'Cost (IRR)', impressions:'Impressions', clicks:'Clicks', sessions:'Sessions',
-    leads:'Leads', inzone:'Inzone', mql:'MQL', orders:'Orders', sms:'SMS Sent', upsell:'Upsell',
+    leads:'Leads', inzone:'Inzone', mql:'Total MQL', mqlDirect:'Direct MQL', orders:'Orders', sms:'SMS Sent', upsell:'Upsell',
     cpl:'CPL', cpo:'CPO', cpmql:'CPMQL' };
 
   var els = {};
@@ -506,6 +506,11 @@
   }
 
   function metricValue(row, name){
+    if (name === 'mqlDirect'){
+      var cls = campaignClass(row);
+      if (INTENT_TYPES.indexOf(cls) === -1 || (typeFilter && typeFilter !== cls)) return 0;
+      return field(row, TYPE_FIELD_MAP.mql[cls]) || 0;
+    }
     if (inTypeView() && TYPE_FIELD_MAP[name]){
       var v = field(row, TYPE_FIELD_MAP[name][typeFilter]) || 0;
       // Cost has no per-type columns in practice: a campaign's spend belongs to ITS type (same rule as the
@@ -541,7 +546,7 @@
   }
 
   // ---------- Target lookup (Targets tab: one row per Jalali Year+Month) ----------
-  var TARGET_TYPE_PREFIX = { leads:'lead', inzone:'inzone', mql:'mql', orders:'order', upsell:'upsell', cost:'cost' };
+  var TARGET_TYPE_PREFIX = { leads:'lead', inzone:'inzone', mql:'mql', mqlDirect:'mql', orders:'order', upsell:'upsell', cost:'cost' };
   var BLENDED_ONLY_METRICS = { impressions:1, clicks:1, sessions:1, sms:1 }; // no per-type target columns exist
 
   function tfield(row, name){ return row[TARGET_IDX[name]] || 0; }
@@ -550,7 +555,7 @@
   // <Channel>" columns) — when a specific Channel Type filter is active, prefer that channel's own
   // target over the blended/type-split one. Takes priority over the Type (Premium/Prescription/Free)
   // filter for these 2 metrics, since there's no combined Channel+Type target column.
-  var CHANNEL_TARGET_METRICS_ = { mql: 'mql', cost: 'cost' };
+  var CHANNEL_TARGET_METRICS_ = { mql: 'mql', mqlDirect: 'mql', cost: 'cost' };
   var CHANNEL_TARGET_SUFFIX_ = { 'Performance':'Performance', 'Organic':'Organic', 'Blog':'Blog', 'Retention':'Retention', 'eCRM':'Ecrm' };
 
   function monthlyTargetFor(metricKey, jy, jmIdx){
@@ -570,6 +575,7 @@
     var prefix = TARGET_TYPE_PREFIX[metricKey];
     if (!prefix) return 0;
     if (typeFilter) return tfield(row, prefix + typeFilter);
+    if (metricKey === 'mqlDirect') return tfield(row, 'mql') || (tfield(row,'mqlPremium') + tfield(row,'mqlPrescription') + tfield(row,'mqlFree')); // All = the three type plans together
     return tfield(row, metricKey); // blended column exists for leads/inzone/mql/orders
   }
 
@@ -850,7 +856,7 @@
     els.channelTypeSelect.value = current;
 
     if (!els.trendMetricSelect.options.length){
-      ['leads','inzone','mql','orders','cost','upsell','sessions','impressions','clicks','cpl','cpo','cpmql'].forEach(function(m){
+      ['leads','inzone','mqlDirect','mql','orders','cost','upsell','sessions','impressions','clicks','cpl','cpo','cpmql'].forEach(function(m){
         var o = document.createElement('option'); o.value = m; o.textContent = METRIC_LABELS[m];
         els.trendMetricSelect.appendChild(o);
       });
@@ -880,7 +886,7 @@
     return t;
   }
 
-  var TARGETABLE_METRICS = { cost:1, impressions:1, clicks:1, sessions:1, leads:1, inzone:1, mql:1, orders:1, upsell:1, sms:1, cpl:1, cpo:1, cpmql:1 };
+  var TARGETABLE_METRICS = { cost:1, impressions:1, clicks:1, sessions:1, leads:1, inzone:1, mqlDirect:1, orders:1, upsell:1, sms:1, cpl:1, cpo:1, cpmql:1 };
 
   // Direct / Indirect / Communication MQL are not plain metrics: they have no plan of their own (the MQL
   // plan applies to Total MQL). In the Communication view there is no direct/indirect, just "MQL".
@@ -913,7 +919,7 @@
         html += '<div class="stat-chips">' + statChip('Attain', attain, LOWER_BETTER[k]);
         html += '<span class="stat-chip neutral">Var '+(variance>=0?'+':'')+Math.round(variance*100)+'%</span></div>';
       } else {
-        html += '<div class="target-line">No target set</div>';
+        html += '<div class="target-line">' + (k === 'mql' && typeFilter !== 'Communication' ? 'Plan is on Direct MQL' : 'No target set') + '</div>';
       }
       tile.innerHTML = html;
       els.tiles.appendChild(tile);
@@ -1229,10 +1235,10 @@
     var isComm = typeFilter === 'Communication';
 
     var tiles = [
-      { key:'directMql', label:'Direct MQL', value: mqlSplit.direct, targetKey:null },
+      { key:'directMql', label:'Direct MQL', value: mqlSplit.direct, targetKey:'mqlDirect' },
       { key:'indirectMql', label:'Indirect MQL', value: mqlSplit.indirect, targetKey:null },
       { key:'commMql', label:'Communication MQL', value: typeFilter ? 0 : mqlSplit.comm, targetKey:null },
-      { key:'totalMql', label: isComm ? 'MQL' : 'Total MQL', value: mqlSplit.total, targetKey:'mql' },
+      { key:'totalMql', label: isComm ? 'MQL' : 'Total MQL', value: mqlSplit.total, targetKey:null },
       { key:'orders', label:'Orders', value: t.orders, targetKey:'orders' },
       { key:'cost', label:'Cost (IRR)', value: t.cost, targetKey:'cost' },
       { key:'cpmql', label:'CPMQL', value: cpmql, targetKey:'cpmql', actualOverride: cpmql }
