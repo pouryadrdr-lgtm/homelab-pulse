@@ -491,7 +491,7 @@
   function campaignClass(row){
     var c = String(field(row,'campaign') || '').trim().toLowerCase();
     if (c === 'premium') return 'Premium';
-    if (c === 'prescription') return 'Prescription';
+    if (c === 'prescription' || c === 'pescription' || c.indexOf('presc') === 0) return 'Prescription'; // incl. the typo 'pescription'
     if (c === 'free' || c === 'non insurance' || c === 'non-insurance' || c === 'noninsurance' || c === 'no-insurance' || c === 'no insurance') return 'Free';
     if (c.indexOf('comm') === 0) return 'Communication';
     return '';
@@ -575,11 +575,15 @@
     var prefix = TARGET_TYPE_PREFIX[metricKey];
     if (!prefix) return 0;
     if (typeFilter) return tfield(row, prefix + typeFilter);
+    if (metricKey === 'cost') return tfield(row, 'cost') || (tfield(row,'costPremium') + tfield(row,'costPrescription') + tfield(row,'costFree'));
     if (metricKey === 'mqlDirect') return tfield(row, 'mql') || (tfield(row,'mqlPremium') + tfield(row,'mqlPrescription') + tfield(row,'mqlFree')); // All = the three type plans together
     return tfield(row, metricKey); // blended column exists for leads/inzone/mql/orders
   }
 
-  var RATIO_DENOM = { cpl:'leads', cpmql:'mql', cpo:'orders' };
+  // CPMQL divides by DIRECT MQL (the MQL the campaign's own type earned) — the same MQL the plan is set on.
+  // The Communication view has no direct/indirect split, so there it divides by its single MQL number.
+  var RATIO_DENOM = { cpl:'leads', cpmql:'mqlDirect', cpo:'orders' };
+  function cpmqlDenomKey(){ return typeFilter === 'Communication' ? 'mql' : 'mqlDirect'; }
 
   function monthlyRatioTarget(metricKey, jy, jmIdx){
     var denomKey = RATIO_DENOM[metricKey];
@@ -882,7 +886,8 @@
     if (!typeFilter || typeFilter === 'Communication') t.mql = split.total; // the parts always add up to the total
     t.cpl = t.leads ? t.cost/t.leads : 0;
     t.cpo = t.orders ? t.cost/t.orders : 0;
-    t.cpmql = t.mql ? t.cost/t.mql : 0;
+    var cpmqlDen = typeFilter === 'Communication' ? t.mql : t.mqlDirect;
+    t.cpmql = cpmqlDen ? t.cost/cpmqlDen : 0;
     return t;
   }
 
@@ -985,7 +990,7 @@
       if (!bucket) return; // outside the selected range
       if (isRatioMetric){
         bucket.cost += metricValue(row,'cost');
-        var denom = trendMetric==='cpl' ? 'leads' : (trendMetric==='cpo' ? 'orders' : 'mql');
+        var denom = trendMetric==='cpl' ? 'leads' : (trendMetric==='cpo' ? 'orders' : cpmqlDenomKey());
         bucket.count += metricValue(row,denom);
       } else if (['impressions','clicks','sessions'].indexOf(trendMetric) !== -1){
         bucket.value += field(row,trendMetric)||0;
@@ -1085,11 +1090,12 @@
     rows.forEach(function(row){
       var key = keyFn(row);
       if (key === null) return;
-      if (!groups[key]) groups[key] = { sessions:0, leads:0, mql:0, orders:0, cost:0 };
+      if (!groups[key]) groups[key] = { sessions:0, leads:0, mql:0, mqlDirect:0, orders:0, cost:0 };
       var g = groups[key];
       if (opts.sessions) g.sessions += field(row,'sessions')||0;
       g.leads += metricValue(row,'leads');
       g.mql += metricValue(row,'mql');
+      g.mqlDirect += metricValue(row,'mqlDirect');
       g.orders += metricValue(row,'orders');
       g.cost += metricValue(row,'cost');
     });
@@ -1097,7 +1103,8 @@
       var g = groups[k];
       g.name = k;
       g.cpl = g.leads ? g.cost/g.leads : 0;
-      g.cpmql = g.mql ? g.cost/g.mql : 0;
+      var cpmqlDen = typeFilter === 'Communication' ? g.mql : g.mqlDirect;
+      g.cpmql = cpmqlDen ? g.cost/cpmqlDen : 0;
       g.cpo = g.orders ? g.cost/g.orders : 0;
       g.sessLead = g.sessions ? g.leads/g.sessions : 0;
       g.mqlOrder = g.mql ? g.orders/g.mql : 0;
@@ -1231,7 +1238,8 @@
   function renderBriefTab(rows){
     var mqlSplit = computeMqlSplit(rows);
     var t = computeTotals(rows);
-    var cpmql = mqlSplit.total ? t.cost / mqlSplit.total : 0;
+    var cpmqlDen = typeFilter === 'Communication' ? mqlSplit.total : mqlSplit.direct; // CPMQL = cost / Direct MQL
+    var cpmql = cpmqlDen ? t.cost / cpmqlDen : 0;
     var isComm = typeFilter === 'Communication';
 
     var tiles = [
