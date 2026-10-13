@@ -1000,6 +1000,15 @@
       t.sms += field(row,'sms')||0;
       TYPED_METRICS.forEach(function(m){ t[m] += metricValue(row,m); });
     });
+    // Communication has no direct/indirect, but its MQL still carries a type: break it down for the 3 cards
+    t.commMqlPremium = 0; t.commMqlFree = 0; t.commMqlPrescription = 0;
+    if (typeFilter === 'Communication'){
+      rows.forEach(function(row){
+        t.commMqlPremium += field(row,'mqlPremium') || 0;
+        t.commMqlFree += field(row,'mqlFree') || 0;
+        t.commMqlPrescription += field(row,'mqlPrescription') || 0;
+      });
+    }
     var split = computeMqlSplit(rows);
     t.mqlDirect = split.direct; t.mqlIndirect = split.indirect; t.mqlComm = split.comm;
     if (!typeFilter || typeFilter === 'Communication') t.mql = split.total; // the parts always add up to the total
@@ -1014,7 +1023,8 @@
 
   // Direct / Indirect / Communication MQL are not plain metrics: they have no plan of their own (the MQL
   // plan applies to Total MQL). In the Communication view there is no direct/indirect, just "MQL".
-  var MQL_PART_LABELS = { mqlDirect:'Direct MQL', mqlIndirect:'Indirect MQL', mqlComm:'Communication MQL' };
+  var MQL_PART_LABELS = { mqlDirect:'Direct MQL', mqlIndirect:'Indirect MQL', mqlComm:'Communication MQL',
+    commMqlPremium:'Premium MQL', commMqlFree:'Non-insurance MQL', commMqlPrescription:'Prescription MQL' };
   function tileLabel(k){
     if (MQL_PART_LABELS[k]) return MQL_PART_LABELS[k];
     if (k === 'mql' && typeFilter !== 'Communication') return 'Total MQL';
@@ -1023,11 +1033,13 @@
 
   function renderTiles(rows){
     var t = computeTotals(rows);
-    var order = ['cost','impressions','clicks','sessions','leads','inzone','mqlDirect','mqlIndirect','mqlComm','mql','orders','upsell','sms','cpl','cpo','cpmql'];
+    var order = ['cost','impressions','clicks','sessions','leads','inzone','mqlDirect','mqlIndirect','mqlComm','mql','commMqlPremium','commMqlFree','commMqlPrescription','orders','upsell','sms','cpl','cpo','cpmql'];
     els.tiles.innerHTML = '';
     order.forEach(function(k){
       var actual = t[k];
-      if (!actual) return; // hide tiles with no data for the current filter — keeps the grid focused
+      var isCommType = (k === 'commMqlPremium' || k === 'commMqlFree' || k === 'commMqlPrescription');
+      if (isCommType && typeFilter !== 'Communication') return; // only the Communication view has these three cards
+      if (!actual && !isCommType) return; // hide tiles with no data for the current filter — keeps the grid focused
       if (k === 'mqlComm' && typeFilter) return; // Communication has its own view; the type views exclude it
       var isDerived = (k==='cpl'||k==='cpo'||k==='cpmql');
       var tile = document.createElement('div');
@@ -1366,6 +1378,9 @@
       { key:'indirectMql', label:'Indirect MQL', value: mqlSplit.indirect, targetKey:null },
       { key:'commMql', label:'Communication MQL', value: typeFilter ? 0 : mqlSplit.comm, targetKey:null },
       { key:'totalMql', label: isComm ? 'MQL' : 'Total MQL', value: mqlSplit.total, targetKey:null },
+      { key:'commPremium', label:'Premium MQL', value: isComm ? t.commMqlPremium : 0, targetKey:null },
+      { key:'commFree', label:'Non-insurance MQL', value: isComm ? t.commMqlFree : 0, targetKey:null },
+      { key:'commPrescription', label:'Prescription MQL', value: isComm ? t.commMqlPrescription : 0, targetKey:null },
       { key:'orders', label:'Orders', value: t.orders, targetKey:'orders' },
       { key:'cost', label:'Cost (IRR)', value: t.cost, targetKey:'cost' },
       { key:'cpmql', label:'CPMQL', value: cpmql, targetKey:'cpmql', actualOverride: cpmql }
@@ -1479,7 +1494,7 @@
         ingest(data);
         showOnly('content');
         positionTabIndicator(false);
-        setStatus('live', (RAW.rows.length) + ' rows loaded');
+        setStatus('live', (RAW.rows.length) + ' rows loaded' + (TARGET_IDX.costPremium === undefined ? ' · ⚠ old Apps Script: budget by type is not being served — redeploy Code.gs' : ''));
         var t = data.generatedAt ? new Date(data.generatedAt) : new Date();
         els.footerTime.textContent = t.toLocaleString();
       })
