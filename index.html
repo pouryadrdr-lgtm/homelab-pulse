@@ -63,6 +63,20 @@
   select{background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:7px 10px;font-size:12.5px;font-weight:600;font-family:var(--font-body);transition:border-color .16s var(--ease-out)}
   select:hover{border-color:var(--border-strong)}
   select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  /* Source / Medium: type-to-search combobox */
+  .combo{position:relative;display:inline-flex;align-items:center}
+  .combo input{background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:7px 28px 7px 10px;font-size:12.5px;font-weight:600;font-family:var(--font-body);width:230px;max-width:100%;transition:border-color .16s var(--ease-out)}
+  .combo input::placeholder{color:var(--text-dim);opacity:1}
+  .combo input:hover{border-color:var(--border-strong)}
+  .combo input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .combo-clear{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:22px;height:22px;border:none;background:transparent;color:var(--text-dim);font-size:16px;line-height:1;cursor:pointer;border-radius:5px}
+  .combo-clear:hover{color:var(--accent);background:var(--accent-soft)}
+  .combo-list{position:absolute;top:calc(100% + 4px);left:0;min-width:100%;width:max-content;max-width:min(420px,86vw);max-height:300px;overflow-y:auto;margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius-md);box-shadow:var(--shadow-md);z-index:40}
+  .combo-list li{padding:7px 10px;font-size:12.5px;border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;gap:14px;color:var(--text)}
+  .combo-list li.active{background:var(--accent-soft)}
+  .combo-list li[aria-selected="true"]{font-weight:700;color:var(--accent)}
+  .combo-list li .meta{color:var(--text-dim);font-size:11px;white-space:nowrap}
+  .combo-list li.note{cursor:default;color:var(--text-dim);font-size:11.5px}
   #custom-range{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   #custom-range .to-sep{color:var(--text-faint);font-size:12px}
   .jdate-group{display:flex;gap:4px}
@@ -216,6 +230,11 @@
     </div>
     <div class="sep"></div>
     <select id="channel-type-select"><option value="">Channel Type: All</option></select>
+    <div class="combo" id="sm-combo">
+      <input id="sm-input" type="text" role="combobox" aria-expanded="false" aria-controls="sm-list" aria-autocomplete="list" aria-label="Source / Medium filter" autocomplete="off" spellcheck="false" placeholder="Source / Medium: All">
+      <button type="button" id="sm-clear" class="combo-clear" aria-label="Clear Source / Medium filter" hidden>&times;</button>
+      <ul id="sm-list" class="combo-list" role="listbox" hidden></ul>
+    </div>
     <select id="type-select">
       <option value="">Type: All</option>
       <option value="Premium">Type: Premium</option>
@@ -563,9 +582,13 @@
     if (!row) return 0;
     if (typeFilter === 'Communication') return 0; // the plan has no Communication line
     var chPrefix = CHANNEL_TARGET_METRICS_[metricKey];
-    if (channelTypeFilter && chPrefix){
+    if (channelTypeFilter){
       var suffix = CHANNEL_TARGET_SUFFIX_[channelTypeFilter.trim()];
-      if (suffix) return tfield(row, chPrefix + suffix);
+      if (!suffix) return 0;                  // a channel with no plan column has no plan
+      var isPerf = suffix === 'Performance';
+      if (chPrefix){ var cv = tfield(row, chPrefix + suffix); if (cv || !isPerf) return cv; }
+      else if (!isPerf) return 0;             // channel plans exist only for MQL and Budget
+      // Performance with nothing entered: use the all-campaign plan below
     }
     if (BLENDED_ONLY_METRICS[metricKey]) return tfield(row, metricKey);
     if (metricKey === 'upsell'){
@@ -736,7 +759,7 @@
     if (!refPlanned) return { ok:false, reason:'No plan for the past two weeks' };
     var refRows = RAW.rows.filter(function(row){
       var d = field(row,'date');
-      return d >= refFrom && d <= anchorISO && (!channelTypeFilter || field(row,'channelType') === channelTypeFilter);
+      return d >= refFrom && d <= anchorISO && (!channelTypeFilter || field(row,'channelType') === channelTypeFilter) && smMatch(row);
     });
     var pace = computeTotals(refRows)[metricKey] / refPlanned;
     var planned = targetForDateRange(metricKey, nb.from, nb.to);
@@ -757,6 +780,101 @@
     renderAll();
   }
 
+  // ---------- Source / Medium filter (searchable combobox) ----------
+  // Type to search, pick from the list, or press Enter to keep every combo that contains what you typed
+  // (e.g. "bale" = all Bale sources and mediums). The list holds each "Source / Medium" pair present in the
+  // loaded data — the same keys the Breakdown table uses for its Source / Medium grouping.
+  var smFilter = null;   // null = all | { mode:'exact', value:'Source / Medium' } | { mode:'contains', value:'lowercase', text:'as typed' }
+  var smOptions = [];
+  function smKey(row){ return (field(row,'source') || '(not set)') + ' / ' + (field(row,'medium') || '(not set)'); }
+  function smMatch(row){
+    if (!smFilter) return true;
+    var k = smKey(row);
+    return smFilter.mode === 'exact' ? k === smFilter.value : k.toLowerCase().indexOf(smFilter.value) !== -1;
+  }
+  var smEls = null, smActive = -1, smTyped = false, smItems = [], smOpen = false;
+  function smLabel(){ return !smFilter ? '' : (smFilter.mode === 'exact' ? smFilter.value : 'contains: ' + smFilter.text); }
+  function smSetOpen(v){
+    smOpen = v; smEls.list.hidden = !v; smEls.input.setAttribute('aria-expanded', v ? 'true' : 'false');
+    if (v) smRender();
+  }
+  function smRender(){
+    var raw = smTyped ? smEls.input.value.trim() : '';
+    var q = raw.toLowerCase();
+    var items = [];
+    if (!smTyped) items.push({ kind:'all', label:'All sources / mediums' });
+    else if (q){
+      var n = 0; smOptions.forEach(function(o){ if (o.toLowerCase().indexOf(q) !== -1) n++; });
+      items.push({ kind:'contains', label:'All matching \u201c' + raw + '\u201d', meta: n + (n === 1 ? ' combo' : ' combos'), q:q, text:raw });
+    }
+    var shown = 0, more = 0;
+    smOptions.forEach(function(o){
+      if (q && o.toLowerCase().indexOf(q) === -1) return;
+      if (shown >= 200){ more++; return; }
+      items.push({ kind:'exact', label:o }); shown++;
+    });
+    smItems = items;
+    smActive = (smTyped && q) ? 0 : -1;
+    if (!smTyped && smFilter && smFilter.mode === 'exact'){ for (var i = 0; i < items.length; i++) if (items[i].kind === 'exact' && items[i].label === smFilter.value) smActive = i; }
+    smEls.list.innerHTML = '';
+    items.forEach(function(it, i){
+      var li = document.createElement('li');
+      li.setAttribute('role', 'option'); li.dataset.i = i; li.id = 'sm-opt-' + i;
+      var span = document.createElement('span'); span.textContent = it.label; li.appendChild(span);
+      if (it.meta){ var m = document.createElement('span'); m.className = 'meta'; m.textContent = it.meta; li.appendChild(m); }
+      var sel = (it.kind === 'exact' && smFilter && smFilter.mode === 'exact' && smFilter.value === it.label) || (it.kind === 'all' && !smFilter);
+      li.setAttribute('aria-selected', sel ? 'true' : 'false');
+      if (i === smActive) li.classList.add('active');
+      smEls.list.appendChild(li);
+    });
+    if (!items.length || (items.length === 1 && items[0].kind === 'contains')){
+      var e = document.createElement('li'); e.className = 'note'; e.textContent = 'No matching source / medium'; smEls.list.appendChild(e);
+    }
+    if (more){ var mo = document.createElement('li'); mo.className = 'note'; mo.textContent = '+' + more + ' more \u2014 keep typing to narrow'; smEls.list.appendChild(mo); }
+  }
+  function smMove(delta){
+    if (!smItems.length) return;
+    smActive = (smActive + delta + smItems.length) % smItems.length;
+    var lis = smEls.list.querySelectorAll('li[role=option]');
+    for (var i = 0; i < lis.length; i++) lis[i].classList.toggle('active', i === smActive);
+    if (lis[smActive]){ lis[smActive].scrollIntoView({ block:'nearest' }); smEls.input.setAttribute('aria-activedescendant', lis[smActive].id); }
+  }
+  function smApply(it){
+    if (!it) return;
+    if (it.kind === 'all') smFilter = null;
+    else if (it.kind === 'exact') smFilter = { mode:'exact', value:it.label };
+    else smFilter = { mode:'contains', value:it.q, text:it.text };
+    smTyped = false; smEls.input.value = smLabel(); smEls.clear.hidden = !smFilter;
+    smSetOpen(false);
+    renderAll();
+  }
+  function smInit(){
+    smEls = { input: document.getElementById('sm-input'), list: document.getElementById('sm-list'), clear: document.getElementById('sm-clear') };
+    smEls.input.addEventListener('focus', function(){ smTyped = false; smEls.input.select(); smSetOpen(true); });
+    smEls.input.addEventListener('click', function(){ if (!smOpen) smSetOpen(true); });
+    smEls.input.addEventListener('input', function(){ smTyped = true; smSetOpen(true); });
+    smEls.input.addEventListener('keydown', function(ev){
+      if (ev.key === 'ArrowDown'){ ev.preventDefault(); if (!smOpen) smSetOpen(true); else smMove(1); }
+      else if (ev.key === 'ArrowUp'){ ev.preventDefault(); if (!smOpen) smSetOpen(true); else smMove(-1); }
+      else if (ev.key === 'Enter'){ ev.preventDefault(); if (smOpen && smActive >= 0) smApply(smItems[smActive]); else if (smOpen && smTyped && smItems.length) smApply(smItems[0]); }
+      else if (ev.key === 'Escape'){ smTyped = false; smEls.input.value = smLabel(); smSetOpen(false); }
+    });
+    smEls.input.addEventListener('blur', function(){ smTyped = false; smEls.input.value = smLabel(); smSetOpen(false); });
+    smEls.list.addEventListener('mousedown', function(ev){
+      ev.preventDefault(); // keep focus in the input so blur doesn't close the list before the pick lands
+      var li = ev.target.closest('li[role=option]'); if (li) smApply(smItems[+li.dataset.i]);
+    });
+    smEls.clear.addEventListener('click', function(){ smApply({ kind:'all' }); });
+  }
+  function refreshSourceMedium(){
+    if (!smEls) smInit();
+    var seen = {};
+    RAW.rows.forEach(function(row){ seen[smKey(row)] = true; });
+    smOptions = Object.keys(seen).sort(function(a, b){ return a.toLowerCase() < b.toLowerCase() ? -1 : (a.toLowerCase() > b.toLowerCase() ? 1 : 0); });
+    if (smFilter && smFilter.mode === 'exact' && !seen[smFilter.value]) smFilter = null; // e.g. after switching line
+    smEls.input.value = smLabel(); smEls.clear.hidden = !smFilter;
+  }
+
   function filteredRows(){
     var range = dateRangeFor(dateFilter);
     if (!range || !RAW) return [];
@@ -764,6 +882,7 @@
       var d = field(row,'date');
       if (d < range.from || d > range.to) return false;
       if (channelTypeFilter && field(row,'channelType') !== channelTypeFilter) return false;
+      if (!smMatch(row)) return false;
       if (!rowInTypeFilter(row)) return false;
       return true;
     });
@@ -1344,6 +1463,7 @@
     CHANNEL_TYPES = payload.channelTypes || [];
 
     renderFilterOptions();
+    refreshSourceMedium();
     renderAll();
   }
 
