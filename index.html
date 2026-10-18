@@ -462,7 +462,7 @@
 
   var TYPED_METRICS = ['leads','inzone','mql','orders','cost','upsell'];
   var METRIC_LABELS = { cost:'Cost (IRR)', impressions:'Impressions', clicks:'Clicks', sessions:'Sessions',
-    leads:'Leads', inzone:'Inzone', mql:'Total MQL', mqlDirect:'Direct MQL', orders:'Orders', sms:'SMS Sent', upsell:'Upsell',
+    leads:'Leads', inzone:'Inzone', mql:'Total MQL', mqlDirect:'Direct MQL', orders:'Total Orders', ordersDirect:'Direct Orders', sms:'SMS Sent', upsell:'Upsell',
     cpl:'CPL', cpo:'CPO', cpmql:'CPMQL' };
 
   var els = {};
@@ -525,10 +525,10 @@
   }
 
   function metricValue(row, name){
-    if (name === 'mqlDirect'){
+    if (name === 'mqlDirect' || name === 'ordersDirect'){
       var cls = campaignClass(row);
       if (INTENT_TYPES.indexOf(cls) === -1 || (typeFilter && typeFilter !== cls)) return 0;
-      return field(row, TYPE_FIELD_MAP.mql[cls]) || 0;
+      return field(row, TYPE_FIELD_MAP[name === 'mqlDirect' ? 'mql' : 'orders'][cls]) || 0;
     }
     if (inTypeView() && TYPE_FIELD_MAP[name]){
       var v = field(row, TYPE_FIELD_MAP[name][typeFilter]) || 0;
@@ -546,6 +546,24 @@
   // campaigns are one lump (no intent): they only appear in All and in the Communication view.
   // A positive gap between a row's MQL and its type columns (MQL entered without the split) goes to Indirect
   // in the All view so nothing silently drops out of the total.
+  function computeOrdersSplit(rows){
+    var s = { direct:0, indirect:0, comm:0, total:0 };
+    rows.forEach(function(row){
+      var cls = campaignClass(row);
+      if (cls === 'Communication'){ s.comm += field(row,'orders') || 0; return; }
+      var typeSum = 0;
+      INTENT_TYPES.forEach(function(t){
+        var v = field(row, TYPE_FIELD_MAP.orders[t]) || 0;
+        typeSum += v;
+        if (typeFilter && typeFilter !== t) return;
+        if (cls === t) s.direct += v; else s.indirect += v;
+      });
+      if (!typeFilter){ var gap = (field(row,'orders') || 0) - typeSum; if (gap > 0) s.indirect += gap; }
+    });
+    s.total = s.direct + s.indirect + s.comm;
+    return s;
+  }
+
   function computeMqlSplit(rows){
     var s = { direct:0, indirect:0, comm:0, total:0 };
     rows.forEach(function(row){
@@ -565,7 +583,7 @@
   }
 
   // ---------- Target lookup (Targets tab: one row per Jalali Year+Month) ----------
-  var TARGET_TYPE_PREFIX = { leads:'lead', inzone:'inzone', mql:'mql', mqlDirect:'mql', orders:'order', upsell:'upsell', cost:'cost' };
+  var TARGET_TYPE_PREFIX = { leads:'lead', inzone:'inzone', mql:'mql', mqlDirect:'mql', ordersDirect:'order', orders:'order', upsell:'upsell', cost:'cost' };
   var BLENDED_ONLY_METRICS = { impressions:1, clicks:1, sessions:1, sms:1 }; // no per-type target columns exist
 
   function tfield(row, name){ return row[TARGET_IDX[name]] || 0; }
@@ -598,6 +616,7 @@
     var prefix = TARGET_TYPE_PREFIX[metricKey];
     if (!prefix) return 0;
     if (typeFilter) return tfield(row, prefix + typeFilter);
+    if (metricKey === 'ordersDirect') return tfield(row, 'orders') || (tfield(row,'orderPremium') + tfield(row,'orderPrescription') + tfield(row,'orderFree')); // All = the three type plans together
     if (metricKey === 'cost') return tfield(row, 'cost') || (tfield(row,'costPremium') + tfield(row,'costPrescription') + tfield(row,'costFree'));
     if (metricKey === 'mqlDirect') return tfield(row, 'mql') || (tfield(row,'mqlPremium') + tfield(row,'mqlPrescription') + tfield(row,'mqlFree')); // All = the three type plans together
     return tfield(row, metricKey); // blended column exists for leads/inzone/mql/orders
@@ -605,8 +624,10 @@
 
   // CPMQL divides by DIRECT MQL (the MQL the campaign's own type earned) — the same MQL the plan is set on.
   // The Communication view has no direct/indirect split, so there it divides by its single MQL number.
-  var RATIO_DENOM = { cpl:'leads', cpmql:'mqlDirect', cpo:'orders' };
+  var RATIO_DENOM = { cpl:'leads', cpmql:'mqlDirect', cpo:'ordersDirect' };
   function cpmqlDenomKey(){ return typeFilter === 'Communication' ? 'mql' : 'mqlDirect'; }
+  // CPO divides by DIRECT orders too (Communication keeps its single orders number)
+  function cpoDenomKey(){ return typeFilter === 'Communication' ? 'orders' : 'ordersDirect'; }
 
   function monthlyRatioTarget(metricKey, jy, jmIdx){
     var denomKey = RATIO_DENOM[metricKey];
@@ -979,7 +1000,7 @@
     els.channelTypeSelect.value = current;
 
     if (!els.trendMetricSelect.options.length){
-      ['leads','inzone','mqlDirect','mql','orders','cost','upsell','sessions','impressions','clicks','cpl','cpo','cpmql'].forEach(function(m){
+      ['leads','inzone','mqlDirect','mql','ordersDirect','orders','cost','upsell','sessions','impressions','clicks','cpl','cpo','cpmql'].forEach(function(m){
         var o = document.createElement('option'); o.value = m; o.textContent = METRIC_LABELS[m];
         els.trendMetricSelect.appendChild(o);
       });
@@ -1013,34 +1034,41 @@
     t.mqlDirect = split.direct; t.mqlIndirect = split.indirect; t.mqlComm = split.comm;
     if (!typeFilter || typeFilter === 'Communication') t.mql = split.total; // the parts always add up to the total
     t.cpl = t.leads ? t.cost/t.leads : 0;
-    t.cpo = t.orders ? t.cost/t.orders : 0;
+    var osplit = computeOrdersSplit(rows);
+    t.ordersDirect = osplit.direct; t.ordersIndirect = osplit.indirect; t.ordersComm = osplit.comm;
+    if (!typeFilter || typeFilter === 'Communication') t.orders = osplit.total; // the parts always add up to the total
+    var cpoDen = typeFilter === 'Communication' ? t.orders : t.ordersDirect;
+    t.cpo = cpoDen ? t.cost/cpoDen : 0;
     var cpmqlDen = typeFilter === 'Communication' ? t.mql : t.mqlDirect;
     t.cpmql = cpmqlDen ? t.cost/cpmqlDen : 0;
     return t;
   }
 
-  var TARGETABLE_METRICS = { cost:1, impressions:1, clicks:1, sessions:1, leads:1, inzone:1, mqlDirect:1, orders:1, upsell:1, sms:1, cpl:1, cpo:1, cpmql:1 };
+  var TARGETABLE_METRICS = { cost:1, impressions:1, clicks:1, sessions:1, leads:1, inzone:1, mqlDirect:1, ordersDirect:1, upsell:1, sms:1, cpl:1, cpo:1, cpmql:1 };
 
   // Direct / Indirect / Communication MQL are not plain metrics: they have no plan of their own (the MQL
   // plan applies to Total MQL). In the Communication view there is no direct/indirect, just "MQL".
   var MQL_PART_LABELS = { mqlDirect:'Direct MQL', mqlIndirect:'Indirect MQL', mqlComm:'Communication MQL',
-    commMqlPremium:'Premium MQL', commMqlFree:'Non-insurance MQL', commMqlPrescription:'Prescription MQL' };
+    commMqlPremium:'Premium MQL', commMqlFree:'Non-insurance MQL', commMqlPrescription:'Prescription MQL',
+    ordersDirect:'Direct Orders', ordersIndirect:'Indirect Orders', ordersComm:'Communication Orders' };
   function tileLabel(k){
     if (MQL_PART_LABELS[k]) return MQL_PART_LABELS[k];
     if (k === 'mql' && typeFilter !== 'Communication') return 'Total MQL';
+    if (k === 'orders' && typeFilter !== 'Communication') return 'Total Orders';
+    if (k === 'orders') return 'Orders';
     return METRIC_LABELS[k];
   }
 
   function renderTiles(rows){
     var t = computeTotals(rows);
-    var order = ['cost','impressions','clicks','sessions','leads','inzone','mqlDirect','mqlIndirect','mqlComm','mql','commMqlPremium','commMqlFree','commMqlPrescription','orders','upsell','sms','cpl','cpo','cpmql'];
+    var order = ['cost','impressions','clicks','sessions','leads','inzone','mqlDirect','mqlIndirect','mqlComm','mql','commMqlPremium','commMqlFree','commMqlPrescription','ordersDirect','ordersIndirect','ordersComm','orders','upsell','sms','cpl','cpo','cpmql'];
     els.tiles.innerHTML = '';
     order.forEach(function(k){
       var actual = t[k];
       var isCommType = (k === 'commMqlPremium' || k === 'commMqlFree' || k === 'commMqlPrescription');
       if (isCommType && typeFilter !== 'Communication') return; // only the Communication view has these three cards
       if (!actual && !isCommType) return; // hide tiles with no data for the current filter — keeps the grid focused
-      if (k === 'mqlComm' && typeFilter) return; // Communication has its own view; the type views exclude it
+      if ((k === 'mqlComm' || k === 'ordersComm') && typeFilter) return; // Communication has its own view; the type views exclude it
       var isDerived = (k==='cpl'||k==='cpo'||k==='cpmql');
       var tile = document.createElement('div');
       tile.className = 'tile' + (isDerived ? ' derived' : '');
@@ -1055,7 +1083,7 @@
         html += '<div class="stat-chips">' + statChip('Attain', attain, LOWER_BETTER[k]);
         html += '<span class="stat-chip neutral">Var '+(variance>=0?'+':'')+Math.round(variance*100)+'%</span></div>';
       } else {
-        html += '<div class="target-line">' + (k === 'mql' && typeFilter !== 'Communication' ? 'Plan is on Direct MQL' : 'No target set') + '</div>';
+        html += '<div class="target-line">' + (k === 'mql' && typeFilter !== 'Communication' ? 'Plan is on Direct MQL' : (k === 'orders' && typeFilter !== 'Communication' ? 'Plan is on Direct Orders' : 'No target set')) + '</div>';
       }
       tile.innerHTML = html;
       els.tiles.appendChild(tile);
@@ -1121,7 +1149,7 @@
       if (!bucket) return; // outside the selected range
       if (isRatioMetric){
         bucket.cost += metricValue(row,'cost');
-        var denom = trendMetric==='cpl' ? 'leads' : (trendMetric==='cpo' ? 'orders' : cpmqlDenomKey());
+        var denom = trendMetric==='cpl' ? 'leads' : (trendMetric==='cpo' ? cpoDenomKey() : cpmqlDenomKey());
         bucket.count += metricValue(row,denom);
       } else if (['impressions','clicks','sessions'].indexOf(trendMetric) !== -1){
         bucket.value += field(row,trendMetric)||0;
@@ -1221,13 +1249,14 @@
     rows.forEach(function(row){
       var key = keyFn(row);
       if (key === null) return;
-      if (!groups[key]) groups[key] = { sessions:0, leads:0, mql:0, mqlDirect:0, orders:0, cost:0 };
+      if (!groups[key]) groups[key] = { sessions:0, leads:0, mql:0, mqlDirect:0, orders:0, ordersDirect:0, cost:0 };
       var g = groups[key];
       if (opts.sessions) g.sessions += field(row,'sessions')||0;
       g.leads += metricValue(row,'leads');
       g.mql += metricValue(row,'mql');
       g.mqlDirect += metricValue(row,'mqlDirect');
       g.orders += metricValue(row,'orders');
+      g.ordersDirect += metricValue(row,'ordersDirect');
       g.cost += metricValue(row,'cost');
     });
     var list = Object.keys(groups).map(function(k){
@@ -1236,7 +1265,8 @@
       g.cpl = g.leads ? g.cost/g.leads : 0;
       var cpmqlDen = typeFilter === 'Communication' ? g.mql : g.mqlDirect;
       g.cpmql = cpmqlDen ? g.cost/cpmqlDen : 0;
-      g.cpo = g.orders ? g.cost/g.orders : 0;
+      var cpoDen = typeFilter === 'Communication' ? g.orders : g.ordersDirect;
+      g.cpo = cpoDen ? g.cost/cpoDen : 0;
       g.sessLead = g.sessions ? g.leads/g.sessions : 0;
       g.mqlOrder = g.mql ? g.orders/g.mql : 0;
       return g;
@@ -1368,6 +1398,7 @@
 
   function renderBriefTab(rows){
     var mqlSplit = computeMqlSplit(rows);
+    var ordSplit = computeOrdersSplit(rows);
     var t = computeTotals(rows);
     var cpmqlDen = typeFilter === 'Communication' ? mqlSplit.total : mqlSplit.direct; // CPMQL = cost / Direct MQL
     var cpmql = cpmqlDen ? t.cost / cpmqlDen : 0;
@@ -1381,7 +1412,10 @@
       { key:'commPremium', label:'Premium MQL', value: isComm ? t.commMqlPremium : 0, targetKey:null },
       { key:'commFree', label:'Non-insurance MQL', value: isComm ? t.commMqlFree : 0, targetKey:null },
       { key:'commPrescription', label:'Prescription MQL', value: isComm ? t.commMqlPrescription : 0, targetKey:null },
-      { key:'orders', label:'Orders', value: t.orders, targetKey:'orders' },
+      { key:'ordersDirect', label:'Direct Orders', value: ordSplit.direct, targetKey:'ordersDirect' },
+      { key:'ordersIndirect', label:'Indirect Orders', value: ordSplit.indirect, targetKey:null },
+      { key:'ordersComm', label:'Communication Orders', value: typeFilter ? 0 : ordSplit.comm, targetKey:null },
+      { key:'orders', label: isComm ? 'Orders' : 'Total Orders', value: ordSplit.total, targetKey:null },
       { key:'cost', label:'Cost (IRR)', value: t.cost, targetKey:'cost' },
       { key:'cpmql', label:'CPMQL', value: cpmql, targetKey:'cpmql', actualOverride: cpmql }
     ];
